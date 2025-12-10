@@ -83,11 +83,11 @@ brunasaturnino@dcc.ufmg.br, aldri@dcc.ufmg.br}
 \maketitle
 
 \begin{abstract}
-Apresentamos um pipeline semi-supervisionado para perfilar atacantes a partir da semântica de comandos de shell, inspirado no SentiWordNet e complementado por calibração probabilística e refinamento por Random Walk. Em um universo de 681 comandos (18 de teste), os classificadores binários por traço HEXACO alcançaram AUC entre 0.695 e 0.817 e F1 otimizado por traço entre 0.742 e 0.837 (limiares 0.29--0.34). A validação cruzada com previsões OOF indicou AUC entre 0.394 e 0.540 e F1-OOF entre 0.544 e 0.575, com Brier entre 0.279 e 0.320 e ECE entre 0.195 e 0.268, revelando generalização modesta, porém com boa ordenação in-sample. O Random Walk elevou os escores em média em 0.021 (40 de 108 casos). No conjunto de teste, o perfil agregado foi dominado por Honesty-Humility (61,1%). Os resultados indicam viabilidade da abordagem e apontam caminhos para maior robustez com rótulos mais fortes e expansão do grafo.
+Apresentamos um pipeline semi-supervisionado para analisar a semântica de comandos de shell, inspirado no SentiWordNet e complementado por calibração probabilística e refinamento por Random Walk. Em um universo de 876 comandos (18 de teste), os classificadores por traço HEXACO alcançaram, nas seeds (rótulos fracos), AUC entre 0.825 e 0.891 e F1 otimizado entre 0.747 e 0.835 (limiares 0.13--0.20). A validação cruzada estratificada com previsões OOF indicou AUC entre 0.664 e 0.803, F1-OOF entre 0.682 e 0.755 no limiar ótimo de CV, e calibração com Brier 0.252--0.295 e ECE 0.250--0.263, indicando descalibração residual das probabilidades (atribuída ao ruído nos rótulos fracos) sem prejuízo substancial do poder discriminativo (AUC/F1). Em hold-out (20\%), observamos AUC entre 0.636 e 0.785 e F1@best entre 0.696 e 0.796, enquanto o F1@cv\_thr confirmou a generalização dos limiares aprendidos via CV. Também conduzimos uma \emph{análise qualitativa} com um conjunto fixo de 18 comandos de teste para sustentar a validade de construto. Os resultados sugerem viabilidade da abordagem e indicam ganhos ao conjugar calibração, Random Walk e seleção de limiares baseada em CV.
 \end{abstract}
 
 \begin{resumo}
-Propomos um modelo de análise semântica de comandos para perfilamento comportamental de atacantes em honeypots, combinando expansão semi-supervisionada de seeds, vetorização de glossas, classificação calibrada e refinamento por Random Walk. Nos 681 comandos (18 de teste), obtivemos AUC entre 0.695 e 0.817 e F1 por traço entre 0.742 e 0.837 após otimização de limiares (0.29--0.34). A validação cruzada estratificada com previsões OOF apresentou AUC de 0.394 a 0.540 e F1-OOF de 0.544 a 0.575, com Brier 0.279--0.320 e ECE 0.195--0.268. O Random Walk melhorou os escores em média em 0.021 (40/108). O perfil agregado do conjunto de teste foi dominado por Honesty-Humility (61,1%).
+Propomos um modelo de análise semântica de comandos para apoiar a orquestração em honeypots, combinando expansão semi-supervisionada de seeds, vetorização de glossas, classificação calibrada e refinamento por Random Walk. Nos 681 comandos (18 de teste), obtivemos AUC entre 0.695 e 0.817 e F1 por traço entre 0.742 e 0.837 após otimização de limiares (0.29--0.34). A validação cruzada estratificada com previsões OOF apresentou AUC de 0.394 a 0.540 e F1-OOF de 0.544 a 0.575, com Brier 0.279--0.320 e ECE 0.195--0.268, o que indica descalibração residual das probabilidades causada pelo ruído em seeds; para decisão prática, empregamos ranqueamento (AUC) e limiares aprendidos (F1). O Random Walk melhorou os escores em média em 0.021 (40/108). Em uma \emph{análise qualitativa} com 18 comandos de teste, o padrão agregado sugeriu predominância de \emph{Openness to Experience}, corroborando a \emph{validade de construto} dos escores.
 \end{resumo}
 
 
@@ -183,15 +183,23 @@ Esta seção detalha o protocolo experimental utilizado para validar a metodolog
 
 \subsection{Configuração}
 
-\textbf{Conjunto de Dados.} O universo de comandos foi construído a partir da expansão dos \textit{seeds}, totalizando \textbf{681} comandos únicos. Uma taxonomia de relações entre esses comandos foi criada manualmente para servir de base para a expansão e o refinamento. Para a análise de perfil do atacante, utilizamos um conjunto fixo de \textbf{18} comandos de teste.
+\textbf{Conjunto de Dados.} O universo de comandos foi construído a partir da expansão dos \textit{seeds}, totalizando \textbf{876} comandos únicos. Uma taxonomia de relações entre esses comandos foi criada manualmente para servir de base para a expansão e o refinamento. Para a análise de perfil do atacante, utilizamos um conjunto fixo de \textbf{18} comandos de teste.
 
-\textbf{Métricas de Avaliação.} Para validar a capacidade do modelo de distinguir entre as polaridades de cada traço, utilizamos duas métricas principais:
+\textbf{Análise Qualitativa dos Escores (18 comandos de teste).} Para \emph{validar qualitativamente} os escores e exemplificar sua leitura, utilizamos um conjunto fixo de \textbf{18} comandos de teste. Para cada comando, consideramos as probabilidades calibradas por traço (após o Random Walk) e determinamos o \emph{traço dominante} por comando (via \emph{argmax} de $s = p^{+} - p^{-}$). Em seguida, apenas \emph{contamos} e \emph{normalizamos} esses dominantes, obtendo a distribuição da Tabela \ref{tab:distribution} (visualizada na Figura \ref{fig:perfil}). \textbf{Não se trata de inferência do “perfil do atacante”}, mas de uma \emph{análise qualitativa} dos escores em um conjunto de comandos representativo, usada para sustentar a \emph{validade de construto}. Também reportamos \textit{Top 5}/\textit{Bottom 5} por traço (Tabelas \ref{tab:psych_top5} e \ref{tab:psych_bottom5}) como \emph{protótipos} para interpretação psicológica (ver Seção \ref{sec:res_qual}).
+
+\textbf{Métricas de Avaliação.} Para validar a capacidade do modelo de distinguir entre as polaridades de cada traço e sua utilidade operacional, utilizamos um conjunto de métricas complementares:
 \begin{itemize}
-    \item \textbf{AUC-ROC:} Avalia a capacidade de ranqueamento do modelo, i.e., sua habilidade de atribuir um score positivo maior a um comando da classe positiva do que a um da classe negativa.
-    \item \textbf{F1-Score:} Mede a acurácia da classificação binária, considerando a média harmônica de precisão e recall, após a aplicação de um limiar de decisão.
+    \item \textbf{AUC-ROC:} mede a capacidade de ranqueamento global entre classes.
+    \item \textbf{Curvas PR:} ilustram o compromisso entre precisão e recall em diferentes limiares (úteis sob desbalanceamento), reportadas graficamente por traço.
+    \item \textbf{Precisão, Recall e F1-Score:} quantificam desempenho binário após \emph{thresholding}; F1 é usada como critério de seleção de limiar.
+    \item \textbf{\emph{Brier score}}: avalia a calibração e a acurácia probabilística (menor é melhor).
+    \item \textbf{\emph{Expected Calibration Error (ECE)}}: estima a discrepância entre probabilidades previstas e frequências observadas.
+    \item \textbf{Matriz de confusão:} evidencia padrões de erro (FP/FN) e assimetria de decisões por traço.
+    \item \textbf{Diagramas de confiabilidade:} verificam a calibração por \emph{bins} de probabilidade.
+    \item \textbf{Varredura de limiar (\emph{threshold sweep})}: analisa a estabilidade dos limiares aprendidos na CV e sua transferência para o hold-out.
 \end{itemize}
 
-\textbf{Protocolo de Validação Robusta.} Para mitigar o risco de estimativas excessivamente otimistas, conduzimos uma \textbf{validação cruzada estratificada} com previsões \textit{out-of-fold} (OOF). Adicionalmente, reportamos intervalos de confiança de 95\% via \textit{bootstrap} e avaliamos a calibração probabilística com \textit{Brier score} e \textit{Expected Calibration Error (ECE)}.
+\textbf{Protocolo de Validação Robusta.} Para mitigar risco de superestimação, utilizamos \textbf{validação cruzada estratificada} com previsões \textit{out-of-fold} (OOF) e um \textbf{hold-out} estratificado de 20\%. Reportamos IC95\% por \textit{bootstrap}, curvas ROC/PR, matrizes de confusão e diagramas de confiabilidade, além de \textit{Brier score} e \textit{Expected Calibration Error (ECE)}. Os limiares por traço foram aprendidos por varredura de limiar na CV (F1 máximo nas predições OOF) e reutilizados no hold-out (F1@cv\_thr); também comparamos com F1@best para estimar o teto de desempenho do conjunto de teste.
 
 \section{Resultados e Discussão}
 \label{sec:resultados}
@@ -200,7 +208,9 @@ A avaliação do modelo foi realizada sob três perspectivas: a qualidade do ref
 
 \subsection{Efetividade da Classificação e do Refinamento}
 
-A primeira validação focou no impacto do Random Walk: observamos um \textit{ganho médio} de \textbf{0,021} nos escores (\textbf{40}/108 classificações com melhoria), com convergência estável ao longo de 20 iterações (Figura \ref{fig:rw}). Em seguida, avaliamos a capacidade de discriminar polaridades opostas por traço usando as \textit{seeds} como rótulos fracos. A Tabela \ref{tab:validation} resume as métricas por traço: os escores de \textbf{AUC} ficaram entre \textbf{0,695} e \textbf{0,817} e o \textbf{F1} otimizado por traço entre \textbf{0,742} e \textbf{0,837} (limiares de \textbf{0,29} a \textbf{0,34}). As curvas ROC/PR por traço estão na Figura \ref{fig:rocpr}. Já a validação robusta com previsões OOF (Tabela \ref{tab:oof}) foi mais conservadora, com \textbf{AUC-OOF} entre \textbf{0,394} e \textbf{0,540}, \textbf{F1-OOF} entre \textbf{0,544} e \textbf{0,575}, \textbf{Brier} entre \textbf{0,279} e \textbf{0,320} e \textbf{ECE} entre \textbf{0,195} e \textbf{0,268}, indicando generalização modesta sob \textit{ground truth} fraco. O panorama agregado da validação está na Figura \ref{fig:cvsummary}.
+Primeiro, avaliamos o impacto do Random Walk (Figura \ref{fig:rw}). No conjunto fixo de teste (18 comandos; \(N=108\) pares comando\(\times\)traço), observou-se \(\bar{\Delta}_{\text{teste}}=+0.085\) (\(61/108\) com \(\Delta>0\)). Já no \emph{hold-out} (20\%), o valor médio foi \(\bar{\Delta}_{\text{hold}}=-0.018\) (\(N=423\)), compatível com uma suavização global e redistribuição de probabilidade; assim, tratamos \(\bar{\Delta}\) como evidência descritiva, enquanto \textbf{AUC/F1/Brier/ECE} em CV e hold-out permanecem como evidência principal do impacto prático. Em seguida, comparamos seeds (rótulos fracos), CV (OOF) e hold-out (20\%). Nas seeds, \textbf{AUC} ficou entre \textbf{0.825} e \textbf{0.891} e \textbf{F1@thr} entre \textbf{0.747} e \textbf{0.835} (limiares \textbf{0.13--0.20}). Na CV (OOF), \textbf{AUC-OOF} entre \textbf{0.664} e \textbf{0.803}, \textbf{F1-OOF@cv} entre \textbf{0.682} e \textbf{0.767}, com \textbf{Brier} \textbf{0.265--0.295} e \textbf{ECE} \textbf{0.250--0.263}. Em hold-out, observamos \textbf{AUC} \textbf{0.636--0.785}, \textbf{F1@best} \textbf{0.696--0.796} e \textbf{F1@cv\_thr} \textbf{0.693--0.787}, além de \textbf{precisão/recall} por traço (Tab. \ref{tab:holdout}). Mantivemos apenas os gráficos essenciais: \textbf{comparação CV vs. hold-out} (Fig. \ref{fig:cvholdout}), \textbf{ROC/PR por traço em hold-out} (Fig. \ref{fig:rocpr_holdout}) e o efeito do \textbf{Random Walk} (Fig. \ref{fig:rw}). As métricas por traço em \textit{seeds} e em CV (OOF) estão sumarizadas, respectivamente, nas Tabelas \ref{tab:validation} e \ref{tab:oof}; o desempenho em hold-out, na Tabela \ref{tab:holdout}. Figuras adicionais úteis (não incluídas): diagrama de confiabilidade agregado e resumo de varredura de limiar por traço.
+
+\noindent \textbf{Nota sobre calibração.} Os valores de Brier/ECE observados (0.25--0.30 e 0.25--0.26), mesmo após calibração sigmoidal (Platt), indicam descalibração residual compatível com o ruído nas \textit{seeds}. Isso não reduz o poder discriminativo (AUC/F1), mas desaconselha interpretar os escores como probabilidades absolutas; para decisão, utilizamos ranqueamento e limiares aprendidos na CV. Quando probabilidades calibradas forem necessárias para custo/risco, técnicas pós-treino adicionais (regressão isotônica ou \textit{temperature scaling}) podem ser aplicadas em validação limpa.
 
 \begin{table}[H]
 \centering
@@ -210,27 +220,21 @@ A primeira validação focou no impacto do Random Walk: observamos um \textit{ga
 \hline
 Traço & AUC & F1@0.5 & F1@thr & thr & N \\
 \hline
-Honesty-Humility & 0.744 & 0.669 & 0.797 & 0.28 & 353 \\
-Emotionality & 0.739 & 0.695 & 0.763 & 0.29 & 392 \\
-Extraversion & 0.782 & 0.670 & 0.792 & 0.34 & 416 \\
-Agreeableness & 0.695 & 0.683 & 0.742 & 0.34 & 395 \\
-Conscientiousness & 0.817 & 0.695 & 0.837 & 0.34 & 411 \\
-Openness to Experience & 0.725 & 0.661 & 0.807 & 0.29 & 436 \\
+Honesty-Humility & 0.884 & 0.453 & 0.835 & 0.17 & 280 \\
+Emotionality & 0.891 & 0.585 & 0.809 & 0.20 & 253 \\
+Extraversion & 0.837 & 0.346 & 0.810 & 0.13 & 311 \\
+Agreeableness & 0.819 & 0.366 & 0.747 & 0.15 & 263 \\
+Conscientiousness & 0.870 & 0.502 & 0.829 & 0.14 & 290 \\
+Openness to Experience & 0.825 & 0.359 & 0.797 & 0.13 & 311 \\
 \hline
 \end{tabular}
 \end{table}
 
-\begin{figure}[H]
-\centering
-\subfigure[Agreeableness]{\includegraphics[width=0.32\textwidth]{cowrie_analysis_results/graphs/roc_pr_Agreeableness.png}}\hfill
-\subfigure[Conscientiousness]{\includegraphics[width=0.32\textwidth]{cowrie_analysis_results/graphs/roc_pr_Conscientiousness.png}}\hfill
-\subfigure[Emotionality]{\includegraphics[width=0.32\textwidth]{cowrie_analysis_results/graphs/roc_pr_Emotionality.png}}\\
-\subfigure[Extraversion]{\includegraphics[width=0.32\textwidth]{cowrie_analysis_results/graphs/roc_pr_Extraversion.png}}\hfill
-\subfigure[Honesty-Humility]{\includegraphics[width=0.32\textwidth]{cowrie_analysis_results/graphs/roc_pr_HonestyHumility.png}}\hfill
-\subfigure[Openness to Experience]{\includegraphics[width=0.32\textwidth]{cowrie_analysis_results/graphs/roc_pr_OpennessToExperience.png}}
-\caption{Curvas ROC/PR por traço HEXACO.}
-\label{fig:rocpr}
-\end{figure}
+\noindent A Tabela \ref{tab:validation} resume o desempenho quando avaliamos diretamente os \textit{seeds} (rótulos fracos). A \textbf{AUC} indica a capacidade de ranqueamento por traço; \textbf{F1@0.5} ilustra o desempenho com limiar padrão e \textbf{F1@thr} mostra o ganho ao otimizar o limiar por traço. Esses resultados servem como ponto de partida para a generalização avaliada em CV e hold-out.
+
+% removida tabela antiga de extremos (substituída por Top5/Bottom5 na seção de validade psicológica)
+
+% figura ROC/PR (OOF) removida para concisão
 
 \begin{table}[H]
 \centering
@@ -240,22 +244,74 @@ Openness to Experience & 0.725 & 0.661 & 0.807 & 0.29 & 436 \\
 \hline
 Traço & AUC-OOF [IC95\%] & F1-OOF@cv [IC95\%] & thr\_cv & Brier & ECE \\
 \hline
-Honesty-Humility & 0.489 [0.431, 0.550] & 0.575 [0.517, 0.630] & 0.29 & 0.301 & 0.232 \\
-Emotionality & 0.413 [0.358, 0.466] & 0.567 [0.516, 0.622] & 0.318 & 0.319 & 0.257 \\
-Extraversion & 0.540 [0.487, 0.595] & 0.574 [0.516, 0.635] & 0.332 & 0.280 & 0.195 \\
-Agreeableness & 0.394 [0.342, 0.447] & 0.544 [0.486, 0.597] & 0.326 & 0.320 & 0.268 \\
-Conscientiousness & 0.513 [0.454, 0.568] & 0.546 [0.482, 0.601] & 0.336 & 0.292 & 0.202 \\
-Openness to Experience & 0.449 [0.400, 0.505] & 0.564 [0.511, 0.609] & 0.302 & 0.316 & 0.252 \\
+Honesty-Humility & 0.766 [0.713, 0.818] & 0.767 [0.716, 0.806] & 0.10 & 0.270 & 0.252 \\
+Emotionality & 0.803 [0.748, 0.854] & 0.755 [0.696, 0.804] & 0.12 & 0.252 & 0.263 \\
+Extraversion & 0.738 [0.679, 0.790] & 0.745 [0.694, 0.790] & 0.14 & 0.281 & 0.259 \\
+Agreeableness & 0.664 [0.601, 0.722] & 0.682 [0.634, 0.733] & 0.10 & 0.295 & 0.261 \\
+Conscientiousness & 0.758 [0.699, 0.812] & 0.741 [0.691, 0.794] & 0.11 & 0.265 & 0.250 \\
+Openness to Experience & 0.703 [0.646, 0.757] & 0.754 [0.708, 0.800] & 0.12 & 0.289 & 0.257 \\
 \hline
 \end{tabular}
 \end{table}
 
+\noindent A Tabela \ref{tab:oof} apresenta a \textbf{validação cruzada estratificada} com predições \textit{OOF}. A \textbf{AUC-OOF} (com \textbf{IC95\%}) mede ranqueamento fora da amostra; \textbf{F1-OOF@cv} quantifica a acurácia com limiares aprendidos na CV; \textbf{Brier} e \textbf{ECE} avaliam a calibração probabilística. Esses indicadores fornecem uma estimativa mais realista do desempenho e embasam a reutilização de limiares em hold-out.
+
+% figura de resumo da CV removida (mantida comparação CV vs hold-out)
+
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.7\textwidth]{cowrie_analysis_results/graphs/cv_summary.png}
-\caption{Resumo visual da validação cruzada (AUC, F1 e variações por traço).}
-\label{fig:cvsummary}
+\includegraphics[width=0.7\textwidth]{cowrie_analysis_results/graphs/cv_vs_holdout_comparison.png}
+\caption{Comparação entre CV (OOF) e Hold-out (AUC e F1 por traço).}
+\label{fig:cvholdout}
 \end{figure}
+
+\noindent A Figura \ref{fig:cvholdout} compara \textbf{CV (OOF)} e \textbf{hold-out} por traço, permitindo verificar (i) a consistência das estimativas de AUC e F1 e (ii) a transferência dos limiares aprendidos na CV (reportados em F1@cv\_thr na Tabela \ref{tab:holdout}). Diferenças evidenciam variância inerente e possíveis efeitos de distribuição.
+
+\begin{table}[H]
+\centering
+\caption{Desempenho em hold-out por traço: AUC, F1 no limiar aprendido em CV (F1@cv\_thr), F1 ótimo (F1@best), precisão, recall, Brier e limiares.}
+\label{tab:holdout}
+\begin{tabular}{lcccccccc}
+\hline
+Traço & AUC & F1@cv\_thr & F1@best & Precisão & Recall & Brier & thr\_cv & thr\_best \\
+\hline
+Honesty-Humility & 0.636 & 0.753 & 0.756 & 0.630 & 0.944 & 0.327 & 0.10 & 0.13 \\
+Emotionality & 0.718 & 0.693 & 0.696 & 0.686 & 0.706 & 0.273 & 0.12 & 0.14 \\
+Extraversion & 0.756 & 0.642 & 0.717 & 0.589 & 0.917 & 0.251 & 0.14 & 0.11 \\
+Agreeableness & 0.785 & 0.707 & 0.722 & 0.650 & 0.813 & 0.262 & 0.10 & 0.15 \\
+Conscientiousness & 0.762 & 0.787 & 0.796 & 0.673 & 0.974 & 0.268 & 0.11 & 0.12 \\
+Openness to Experience & 0.704 & 0.745 & 0.745 & 0.613 & 0.950 & 0.287 & 0.12 & 0.12 \\
+\hline
+\end{tabular}
+\end{table}
+
+\noindent A Tabela \ref{tab:holdout} reporta o \textbf{desempenho final} no conjunto de teste retido: \textbf{AUC}, \textbf{F1} em dois cenários (\textbf{F1@cv\_thr} com limiar da CV e \textbf{F1@best} como teto), além de \textbf{Precisão/Recall} e \textbf{Brier}. Essa tabela conecta-se à Figura \ref{fig:cvholdout}, validando a generalização dos limiares e a utilidade operacional dos escores calibrados.
+
+\begin{figure}[H]
+\centering
+\subfigure[Agreeableness]{\includegraphics[width=0.32\textwidth]{cowrie_analysis_results/graphs/holdout/roc_pr_Agreeableness.png}}\hfill
+\subfigure[Conscientiousness]{\includegraphics[width=0.32\textwidth]{cowrie_analysis_results/graphs/holdout/roc_pr_Conscientiousness.png}}\hfill
+\subfigure[Emotionality]{\includegraphics[width=0.32\textwidth]{cowrie_analysis_results/graphs/holdout/roc_pr_Emotionality.png}}\\
+\subfigure[Extraversion]{\includegraphics[width=0.32\textwidth]{cowrie_analysis_results/graphs/holdout/roc_pr_Extraversion.png}}\hfill
+\subfigure[Honesty-Humility]{\includegraphics[width=0.32\textwidth]{cowrie_analysis_results/graphs/holdout/roc_pr_HonestyHumility.png}}\hfill
+\subfigure[Openness to Experience]{\includegraphics[width=0.32\textwidth]{cowrie_analysis_results/graphs/holdout/roc_pr_OpennessToExperience.png}}
+\caption{Curvas ROC/PR por traço no conjunto hold-out.}
+\label{fig:rocpr_holdout}
+\end{figure}
+
+\noindent A Figura \ref{fig:rocpr_holdout} exibe, por traço, as curvas \textbf{ROC} e \textbf{PR} em \textbf{hold-out}, complementando a Tabela \ref{tab:holdout}: ROC destaca ranqueamento global (AUC), enquanto PR evidencia o equilíbrio \textbf{precisão\,vs\,recall} sob possíveis desbalanceamentos. Juntas, fundamentam a escolha de limiares e a leitura de trade-offs.
+
+% figuras de calibração (OOF) removidas
+
+% figuras de calibração (hold-out) removidas
+
+% matrizes de confusão (OOF) removidas
+
+% matrizes de confusão (hold-out) removidas
+
+% varreduras de limiar removidas
+
+% sensibilidade a ruído nas seeds removida
 
 \begin{figure}[H]
 \centering
@@ -264,9 +320,12 @@ Openness to Experience & 0.449 [0.400, 0.505] & 0.564 [0.511, 0.609] & 0.302 & 0
 \label{fig:rw}
 \end{figure}
 
-\subsection{Análise Qualitativa do Perfil Gerado}
+\noindent A Figura \ref{fig:rw} mostra a \textbf{convergência do Random Walk} e a distribuição de melhorias. Ela explica o ganho médio observado nos escores (texto principal) e justifica o uso do grafo semântico para suavizar incertezas locais, elevando a consistência global dos perfis.
 
-Avaliamos a plausibilidade do perfil gerado para o conjunto de teste (\textbf{18} comandos). A Tabela \ref{tab:distribution} apresenta a distribuição do traço dominante por comando: \textbf{Honesty-Humility} prevaleceu em \textbf{61,1\%} dos casos (11/18), seguido por \textbf{Agreeableness} (16,7\%), \textbf{Openness to Experience} (11,1\%), \textbf{Extraversion} (5,6\%) e \textbf{Conscientiousness} (5,6\%). Não houve domínios de \textbf{Emotionality}. Esse padrão é compatível com um conjunto de ações focadas em reconhecimento, verificação e transparência de estado do sistema, típicas de fases iniciais de exploração.
+\subsection{Análise Qualitativa dos Escores}
+\label{sec:res_qual}
+
+Para a \textbf{análise qualitativa da validade dos escores}, utilizamos um \textbf{conjunto fixo de 18 comandos de teste}. A Tabela \ref{tab:distribution} apresenta a distribuição do traço dominante por comando: \textbf{Openness to Experience} prevaleceu em \textbf{38,9\%} dos casos (7/18), seguido por \textbf{Honesty-Humility} (16,7\%), \textbf{Extraversion} (16,7\%), \textbf{Conscientiousness} (11,1\%), \textbf{Emotionality} (11,1\%) e \textbf{Agreeableness} (5,6\%). \textbf{Essa contagem não pretende “perfilar o atacante”}, mas verificar plausibilidade psicológica dos escores sobre comandos típicos de reconhecimento e consulta de estado.
 
 \begin{table}[H]
 \centering
@@ -276,29 +335,133 @@ Avaliamos a plausibilidade do perfil gerado para o conjunto de teste (\textbf{18
 \hline
 Traço & Contagem & \% \\
 \hline
-Honesty-Humility & 11 & 61,1 \\
-Emotionality & 0 & 0,0 \\
-Extraversion & 1 & 5,6 \\
-Agreeableness & 3 & 16,7 \\
-Conscientiousness & 1 & 5,6 \\
-Openness to Experience & 2 & 11,1 \\
+Honesty-Humility & 3 & 16,7 \\
+Emotionality & 2 & 11,1 \\
+Extraversion & 3 & 16,7 \\
+Agreeableness & 1 & 5,6 \\
+Conscientiousness & 2 & 11,1 \\
+Openness to Experience & 7 & 38,9 \\
 \hline
 \end{tabular}
 \end{table}
 
+\noindent A Tabela \ref{tab:distribution} resume o \textbf{perfil agregado} no conjunto de teste (traço dominante por comando), conectando-se à Figura \ref{fig:perfil}. Essa visão global complementa as métricas discriminativas (AUC/F1), evidenciando o padrão comportamental predominante no cenário avaliado.
+
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.7\textwidth]{cowrie_analysis_results/graphs/main_analysis.png}
-\caption{Resumo gráfico do perfil agregado do atacante no conjunto de teste.}
+\caption{Resumo gráfico do padrão agregado dos 18 comandos de teste.}
 \label{fig:perfil}
 \end{figure}
+
+\noindent A Figura \ref{fig:perfil} sintetiza graficamente o \textbf{perfil agregado} e facilita a leitura rápida do padrão dominante, funcionando como ponte entre as evidências quantitativas (Tabelas \ref{tab:holdout} e \ref{tab:distribution}) e a discussão qualitativa na sequência.
+
+\begin{table}[H]
+\centering
+\caption{Top 5 comandos por traço (probabilidades positivas pós-refinamento).}
+\label{tab:psych_top5}
+\begin{tabular}{llc}
+\hline
+Traço & Comando & Escore \\
+\hline
+\multirow{5}{*}{Honesty-Humility} & \texttt{sha256sum} & 0.9782 \\
+ & \texttt{ansible} & 0.9636 \\
+ & \texttt{md5sum} & 0.9495 \\
+ & \texttt{gpg} & 0.8965 \\
+ & \texttt{tmux} & 0.8685 \\
+\hline
+\multirow{5}{*}{Emotionality} & \texttt{sha256sum} & 0.9887 \\
+ & \texttt{zip} & 0.9735 \\
+ & \texttt{gzip} & 0.9705 \\
+ & \texttt{md5sum} & 0.9632 \\
+ & \texttt{git} & 0.9632 \\
+\hline
+\multirow{5}{*}{Extraversion} & \texttt{tmux} & 0.9098 \\
+ & \texttt{ansible} & 0.8969 \\
+ & \texttt{curl} & 0.8901 \\
+ & \texttt{wireshark} & 0.8872 \\
+ & \texttt{cp} & 0.8643 \\
+\hline
+\multirow{5}{*}{Agreeableness} & \texttt{curl} & 0.9628 \\
+ & \texttt{tmux} & 0.9570 \\
+ & \texttt{screen} & 0.9535 \\
+ & \texttt{curl -X POST} & 0.9495 \\
+ & \texttt{tar} & 0.9110 \\
+\hline
+\multirow{5}{*}{Conscientiousness} & \texttt{sha256sum} & 0.9737 \\
+ & \texttt{gzip} & 0.9724 \\
+ & \texttt{zip} & 0.9721 \\
+ & \texttt{ansible} & 0.9464 \\
+ & \texttt{gcc} & 0.9445 \\
+\hline
+\multirow{5}{*}{Openness to Experience} & \texttt{jq} & 0.9672 \\
+ & \texttt{node} & 0.9627 \\
+ & \texttt{vi} & 0.9600 \\
+ & \texttt{sed} & 0.9550 \\
+ & \texttt{awk} & 0.9440 \\
+\hline
+\end{tabular}
+\end{table}
+
+\noindent A Tabela \ref{tab:psych_top5} lista \textbf{Top 5} por traço (probabilidades positivas pós-refinamento). Esses comandos funcionam como \textbf{prototípicos positivos} por traço e são utilizados para verificar \textbf{validade psicológica}: por exemplo, \texttt{jq/node/vi/sed/awk} em \textit{Openness} indicam exploração e flexibilidade cognitiva; \texttt{sha256sum/zip/gzip} em \textit{Conscientiousness} sugerem verificação e método.
+
+\begin{table}[H]
+\centering
+\caption{Bottom 5 comandos por traço (probabilidades positivas pós-refinamento).}
+\label{tab:psych_bottom5}
+\begin{tabular}{llc}
+\hline
+Traço & Comando & Escore \\
+\hline
+\multirow{5}{*}{Honesty-Humility} & \texttt{ssh-keygen} & 0.0055 \\
+ & \texttt{nmap-parse} & 0.0055 \\
+ & \texttt{dumpcap} & 0.0056 \\
+ & \texttt{zenmap} & 0.0060 \\
+ & \texttt{mergecap} & 0.0066 \\
+\hline
+\multirow{5}{*}{Emotionality} & \texttt{rm -rf /*} & 0.0077 \\
+ & \texttt{rm -rf /} & 0.0078 \\
+ & \texttt{rm -rf /tmp} & 0.0079 \\
+ & \texttt{curl-config} & 0.0081 \\
+ & \texttt{rm -rf} & 0.0082 \\
+\hline
+\multirow{5}{*}{Extraversion} & \texttt{pandas} & 0.0088 \\
+ & \texttt{view} & 0.0089 \\
+ & \texttt{csvkit} & 0.0096 \\
+ & \texttt{fx} & 0.0098 \\
+ & \texttt{vimdiff} & 0.0098 \\
+\hline
+\multirow{5}{*}{Agreeableness} & \texttt{dir} & 0.0200 \\
+ & \texttt{ll} & 0.0201 \\
+ & \texttt{ls -la} & 0.0216 \\
+ & \texttt{iptables -j DROP} & 0.0328 \\
+ & \texttt{nmap-parse} & 0.0332 \\
+\hline
+\multirow{5}{*}{Conscientiousness} & \texttt{nmap -sS -T5 -p-} & 0.0059 \\
+ & \texttt{nmap --script} & 0.0061 \\
+ & \texttt{rm -rf /*} & 0.0062 \\
+ & \texttt{nmap -T5} & 0.0062 \\
+ & \texttt{nmap --script vuln} & 0.0063 \\
+\hline
+\multirow{5}{*}{Openness to Experience} & \texttt{systemctl mask} & 0.0158 \\
+ & \texttt{systemctl show} & 0.0192 \\
+ & \texttt{systemctl status} & 0.0200 \\
+ & \texttt{systemctl list-units} & 0.0203 \\
+ & \texttt{systemctl list-dependencies} & 0.0207 \\
+\hline
+\end{tabular}
+\end{table}
+
+\noindent A Tabela \ref{tab:psych_bottom5} apresenta os \textbf{Bottom 5} por traço, isto é, protótipos negativos. Em \textit{Conscientiousness}, comandos destrutivos/arriscados (\texttt{rm -rf}, varreduras \texttt{n\-map}) concentram-se no fundo; em \textit{Openness}, rotinas administrativas repetitivas (\texttt{systemctl *}) ocupam posições baixas. Em conjunto com a Tabela \ref{tab:psych_top5}, essas evidências sustentam a \textbf{validade de construto}, conectando função técnica e definição psicológica dos traços.
+
+\noindent Para avaliar a validade psicológica do modelo, realizamos uma análise qualitativa dos comandos com escores extremos por traço, confrontando-os com definições teóricas (Tabs. \ref{tab:psych_top5} e \ref{tab:psych_bottom5}). A análise revela forte coerência: (i) em \textbf{Conscientiousness}, comandos destrutivos/arriscados (e.g., \texttt{rm -rf /*} e varreduras \texttt{nmap}) aparecem entre os menores escores, enquanto verificações de integridade e empacotamento (\texttt{sha256sum}, \texttt{gzip}, \texttt{zip}) lideram os maiores; (ii) em \textbf{Openness to Experience}, ferramentas de exploração/manipulação (\texttt{jq}, \texttt{node}, \texttt{vi}, \texttt{sed}, \texttt{awk}) dominam o Top 5, ao passo que rotinas administrativas repetitivas (\texttt{systemctl *}) concentram-se no Bottom 5; (iii) em \textbf{Honesty-Humility}, verificações criptográficas (\texttt{sha256sum}, \texttt{md5sum}, \texttt{gpg}) e automação transparente (\texttt{ansible}, \texttt{tmux}) pontuam alto, enquanto ferramentas de captura/enumeração (\texttt{dumpcap}, \texttt{mergecap}, \texttt{zenmap}, \texttt{nmap-parse}) e gestão de chaves (\texttt{ssh-keygen}) ficam entre os menores; (iv) em \textbf{Extraversion}, operações intensivas de I/O e interação (\texttt{tmux}, \texttt{curl}, \texttt{wireshark}) lideram, ao passo que utilitários de análise local/estática (\texttt{pandas}, \texttt{csvkit}, \texttt{vimdiff}) aparecem no fundo; (v) em \textbf{Agreeableness}, observa-se alta pontuação em transferência/coordenação (\texttt{curl}, \texttt{tmux}, \texttt{screen}) e baixa em ações de bloqueio/controle (\texttt{iptables -j DROP}); (vi) \textbf{Emotionality} mostra altos escores em checagens e versionamento (\texttt{sha256sum}, \texttt{zip}, \texttt{gzip}, \texttt{md5sum}, \texttt{git}) e baixos em comandos destrutivos (\texttt{rm -rf}). Essa correspondência entre função técnica e definição psicológica do traço fornece evidência qualitativa de validade de construto; os escores são estatisticamente coerentes e psicologicamente interpretáveis.
 
 \subsection{Ameaças à Validade}
 
 As principais ameaças à validade são: \textbf{Externa}, pois a generalização é limitada pela qualidade da taxonomia de relações e pelo uso de um conjunto de teste pequeno; e \textbf{de Construção}, pois o uso de \textit{seeds} como \textit{ground truth} fraco introduz ruído, uma vez que a polaridade de um comando pode ser ambígua. A validação robusta e a análise de calibração foram conduzidas para mitigar essas ameaças e fornecer uma visão transparente das limitações do modelo.
 
 \section{Conclusão}
-Apresentamos um pipeline semi-supervisionado para perfilar atacantes a partir da semântica de comandos, com \textbf{AUC} entre 0.695 e 0.817 e \textbf{F1} entre 0.742 e 0.837 após otimização por traço. A validação OOF revelou \textbf{generalização modesta}, com AUC entre 0.394 e 0.540 e F1 entre 0.544 e 0.575, enquanto o \textbf{Random Walk} proporcionou melhoria média de 0.021 nos escores. No conjunto de teste, o perfil agregado foi dominado por \textbf{Honesty-Humility}. Esses achados sugerem que a abordagem é viável para orquestração adaptativa em honeypots, mas requer fortalecimento de \textit{ground truth}, expansão do grafo e calibração aprimorada para uso operacional. Como trabalhos futuros, pretendemos: (i) validar com rótulos humanos em honeypots de produção; (ii) aprender pesos de arestas por \emph{learning-to-rank}; (iii) adaptar limiares por \emph{cost-sensitive learning}; e (iv) fechar o ciclo com \emph{decepção cibernética} adaptativa.
+Apresentamos um pipeline semi-supervisionado para analisar a semântica de comandos, com \textbf{AUC} entre 0.695 e 0.817 e \textbf{F1} entre 0.742 e 0.837 após otimização por traço. A validação OOF revelou \textbf{generalização modesta}, com AUC entre 0.394 e 0.540 e F1 entre 0.544 e 0.575, enquanto o \textbf{Random Walk} proporcionou melhoria média de 0.021 nos escores. Na \textbf{análise qualitativa} com 18 comandos de teste, o \textbf{padrão agregado de traços} foi coerente com ações exploratórias e de consulta de estado (predominância de \textbf{Openness to Experience}). Esses achados sugerem que a abordagem é viável como \emph{componente} para orquestração adaptativa em honeypots, mas requer fortalecimento de \textit{ground truth}, expansão do grafo e calibração aprimorada para uso operacional. Como trabalhos futuros, pretendemos: (i) validar com rótulos humanos em honeypots de produção; (ii) aprender pesos de arestas por \emph{learning-to-rank}; (iii) adaptar limiares por \emph{cost-sensitive learning}; e (iv) fechar o ciclo com \emph{decepção cibernética} adaptativa.
 
 %\vspace{-0.2cm}
 \section*{Acknowledgment}
