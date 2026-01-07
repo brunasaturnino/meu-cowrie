@@ -2,17 +2,17 @@
   "dataset_stats": {
     "total_commands": 876,
     "seed_sets_expanded": {
-      "HonestyHumility_Positive": 144,
+      "HonestyHumility_Positive": 145,
       "HonestyHumility_Negative": 136,
-      "Emotionality_Positive": 137,
+      "Emotionality_Positive": 136,
       "Emotionality_Negative": 116,
-      "Extraversion_Positive": 146,
+      "Extraversion_Positive": 148,
       "Extraversion_Negative": 165,
-      "Agreeableness_Positive": 130,
-      "Agreeableness_Negative": 133,
-      "Conscientiousness_Positive": 152,
+      "Agreeableness_Positive": 129,
+      "Agreeableness_Negative": 139,
+      "Conscientiousness_Positive": 155,
       "Conscientiousness_Negative": 138,
-      "OpennessToExperience_Positive": 161,
+      "OpennessToExperience_Positive": 167,
       "OpennessToExperience_Negative": 150
     },
     "test_commands": 18,
@@ -20,19 +20,19 @@
     "alpha_factor": 0.6
   },
   "classification_improvement": {
-    "avg_improvement": 0.08482169056599217,
-    "max_improvement": 0.5101851880295252,
-    "min_improvement": -0.0506287269156705,
+    "avg_improvement": 0.08485701689892888,
+    "max_improvement": 0.5550391024106134,
+    "min_improvement": -0.038125144942254274,
     "positive_improvements": 61,
     "total_classifications": 108
   },
   "personality_distribution": {
     "HonestyHumility": 3,
-    "Emotionality": 2,
-    "Extraversion": 3,
+    "Emotionality": 3,
+    "Extraversion": 1,
     "Agreeableness": 1,
     "Conscientiousness": 2,
-    "OpennessToExperience": 7
+    "OpennessToExperience": 8
   },
   "command_complexity": {
     "avg_complexity": 0.8888888888888888,

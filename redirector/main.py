@@ -814,34 +814,49 @@ def validate_effectiveness_cv(
                     # ROC e PR
                     fpr, tpr, _ = roc_curve(y_labels, oof_scores)
                     prec, rec, _ = precision_recall_curve(y_labels, oof_scores)
-                    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-                    axes[0].plot(fpr, tpr, label=f"AUC={auc_oof:.3f}" if auc_oof is not None else "AUC=n/a")
-                    axes[0].plot([0, 1], [0, 1], 'k--', alpha=0.4)
-                    axes[0].set_title(f"ROC - {trait}")
-                    axes[0].set_xlabel("FPR")
-                    axes[0].set_ylabel("TPR")
-                    axes[0].legend()
-                    axes[0].grid(True, alpha=0.3)
+                    fig, axes = plt.subplots(1, 2, figsize=(16, 7))
+                    
+                    # ROC Curve
+                    axes[0].plot(fpr, tpr, linewidth=3.5, color='#E57373', label=f"AUC={auc_oof:.3f}" if auc_oof is not None else "AUC=n/a")
+                    axes[0].plot([0, 1], [0, 1], 'k--', alpha=0.5, linewidth=2.5, label='Classificador Aleatório')
+                    axes[0].fill_between(fpr, tpr, alpha=0.2, color='#E57373')
+                    axes[0].set_title(f"Curva ROC - {trait}", fontsize=20, fontweight='bold', pad=20)
+                    axes[0].set_xlabel("Taxa de Falsos Positivos (FPR)", fontsize=18, fontweight='bold')
+                    axes[0].set_ylabel("Taxa de Verdadeiros Positivos (TPR)", fontsize=18, fontweight='bold')
+                    axes[0].legend(fontsize=15, frameon=True, shadow=True, loc='lower right')
+                    axes[0].set_xlim([-0.02, 1.02])
+                    axes[0].set_ylim([-0.02, 1.02])
+                    apply_plot_style(axes[0])
 
-                    axes[1].plot(rec, prec)
-                    axes[1].set_title(f"Precision-Recall - {trait}")
-                    axes[1].set_xlabel("Recall")
-                    axes[1].set_ylabel("Precision")
-                    axes[1].grid(True, alpha=0.3)
+                    # PR Curve
+                    axes[1].plot(rec, prec, linewidth=3.5, color='#64B5F6')
+                    axes[1].fill_between(rec, prec, alpha=0.2, color='#64B5F6')
+                    axes[1].set_title(f"Curva Precisão-Revocação - {trait}", fontsize=20, fontweight='bold', pad=20)
+                    axes[1].set_xlabel("Revocação (Recall)", fontsize=18, fontweight='bold')
+                    axes[1].set_ylabel("Precisão", fontsize=18, fontweight='bold')
+                    axes[1].set_xlim([-0.02, 1.02])
+                    axes[1].set_ylim([-0.02, 1.02])
+                    apply_plot_style(axes[1])
+                    
                     plt.tight_layout()
                     plt.savefig(graphs_dir / f"roc_pr_{trait}.png", dpi=300, bbox_inches='tight')
                     plt.close()
 
                     # Calibração
                     if len(prob_true) > 0:
-                        plt.figure(figsize=(6, 5))
-                        plt.plot([0, 1], [0, 1], 'k--', alpha=0.4)
-                        plt.plot(prob_pred, prob_true, 'o-', label=f"Brier={brier:.3f} | ECE={ece:.3f}")
-                        plt.title(f"Calibração - {trait}")
-                        plt.xlabel("Confiança prevista")
-                        plt.ylabel("Frequência observada")
-                        plt.legend()
-                        plt.grid(True, alpha=0.3)
+                        fig_cal, ax_cal = plt.subplots(figsize=(8, 7))
+                        ax_cal.plot([0, 1], [0, 1], 'k--', alpha=0.5, linewidth=2.5, label='Perfeitamente Calibrado')
+                        ax_cal.plot(prob_pred, prob_true, 'o-', linewidth=3, markersize=12,
+                                   color='#81C784', markerfacecolor='#388E3C', markeredgecolor='black',
+                                   markeredgewidth=1.5, label=f"Brier={brier:.3f} | ECE={ece:.3f}")
+                        ax_cal.set_title(f"Diagrama de Calibração - {trait}", fontsize=20, fontweight='bold', pad=20)
+                        ax_cal.set_xlabel("Probabilidade Predita", fontsize=18, fontweight='bold')
+                        ax_cal.set_ylabel("Fração de Positivos", fontsize=18, fontweight='bold')
+                        ax_cal.legend(fontsize=14, frameon=True, shadow=True, loc='upper left')
+                        ax_cal.set_xlim([-0.02, 1.02])
+                        ax_cal.set_ylim([-0.02, 1.02])
+                        apply_plot_style(ax_cal)
+                        plt.tight_layout()
                         plt.savefig(graphs_dir / f"calibration_{trait}.png", dpi=300, bbox_inches='tight')
                         plt.close()
 
@@ -850,32 +865,43 @@ def validate_effectiveness_cv(
                         cm = confusion_matrix(y_labels, (oof_scores >= cv_thr_mean).astype(int))
                     except Exception:
                         cm = np.array([[0, 0], [0, 0]], dtype=int)
-                    plt.figure(figsize=(5, 5))
+                    fig_cm, ax_cm = plt.subplots(figsize=(8, 7))
                     try:
                         import seaborn as sns
                         sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', cbar=False,
-                                    xticklabels=["NEG", "POS"], yticklabels=["NEG", "POS"])
+                                    xticklabels=["NEG", "POS"], yticklabels=["NEG", "POS"],
+                                    annot_kws={"size": 18, "weight": "bold"},
+                                    linewidths=2, linecolor='black', ax=ax_cm)
+                        ax_cm.tick_params(labelsize=16)
                     except Exception:
-                        plt.imshow(cm, cmap='Blues')
+                        ax_cm.imshow(cm, cmap='Blues')
                         for (i, j), val in np.ndenumerate(cm):
-                            plt.text(j, i, f"{val}", ha='center', va='center')
-                        plt.xticks([0, 1], ["NEG", "POS"]) ; plt.yticks([0, 1], ["NEG", "POS"]) 
-                    plt.title(f"Matriz de Confusão (OOF) - {trait}")
-                    plt.xlabel("Predito")
-                    plt.ylabel("Verdadeiro")
+                            ax_cm.text(j, i, f"{val}", ha='center', va='center', 
+                                      fontsize=18, fontweight='bold')
+                        ax_cm.set_xticks([0, 1])
+                        ax_cm.set_yticks([0, 1])
+                        ax_cm.set_xticklabels(["NEG", "POS"], fontsize=16)
+                        ax_cm.set_yticklabels(["NEG", "POS"], fontsize=16)
+                    ax_cm.set_title(f"Matriz de Confusão (OOF) - {trait}", fontsize=20, fontweight='bold', pad=20)
+                    ax_cm.set_xlabel("Predito", fontsize=18, fontweight='bold')
+                    ax_cm.set_ylabel("Verdadeiro", fontsize=18, fontweight='bold')
                     plt.tight_layout()
                     plt.savefig(graphs_dir / f"confusion_{trait}.png", dpi=300, bbox_inches='tight')
                     plt.close()
 
                     # Varredura de limiar (OOF)
-                    plt.figure(figsize=(6, 4))
-                    plt.plot(thr_values, f1_values, label="F1(OOF)")
-                    plt.axvline(cv_thr_mean, color='r', linestyle='--', label=f"thr(cv)={cv_thr_mean:.2f}")
-                    plt.title(f"F1 vs Limiar (OOF) - {trait}")
-                    plt.xlabel("Limiar")
-                    plt.ylabel("F1-Score")
-                    plt.legend()
-                    plt.grid(True, alpha=0.3)
+                    fig_thr, ax_thr = plt.subplots(figsize=(10, 7))
+                    ax_thr.plot(thr_values, f1_values, linewidth=3.5, color='#BA68C8', 
+                               marker='o', markersize=6, markeredgecolor='black',
+                               markeredgewidth=1, label="F1 Score (OOF)")
+                    ax_thr.axvline(cv_thr_mean, color='#E53935', linestyle='--', 
+                                  linewidth=3, label=f"Limiar Ótimo = {cv_thr_mean:.2f}")
+                    ax_thr.set_title(f"F1-Score vs Limiar (OOF) - {trait}", fontsize=20, fontweight='bold', pad=20)
+                    ax_thr.set_xlabel("Limiar de Decisão", fontsize=18, fontweight='bold')
+                    ax_thr.set_ylabel("F1-Score", fontsize=18, fontweight='bold')
+                    ax_thr.legend(fontsize=15, frameon=True, shadow=True, loc='best')
+                    ax_thr.set_xlim([thr_values[0] - 0.05, thr_values[-1] + 0.05])
+                    apply_plot_style(ax_thr)
                     plt.tight_layout()
                     plt.savefig(graphs_dir / f"threshold_sweep_{trait}.png", dpi=300, bbox_inches='tight')
                     plt.close()
@@ -915,20 +941,30 @@ def validate_effectiveness_cv(
     try:
         if plt is not None and cv_report:
             traits_plot = [t for t in traits if t in cv_report and cv_report[t].get('auc_oof') is not None]
+            trait_short = ["Hon-Hum", "Emoc", "Extr", "Cord", "Consc", "Abert"]
+            trait_labels_plot = [trait_short[i] for i, t in enumerate(traits) if t in traits_plot]
+            
             aucs = [cv_report[t]['auc_oof'] for t in traits_plot]
             f1s = [cv_report[t].get('f1_oof@cv_thr', 0.0) for t in traits_plot]
-            fig, ax1 = plt.subplots(figsize=(10, 5))
+            fig, ax1 = plt.subplots(figsize=(14, 8))
             x = np.arange(len(traits_plot))
-            width = 0.35
-            ax1.bar(x - width/2, aucs, width, label='AUC (OOF)')
-            ax1.bar(x + width/2, f1s, width, label='F1 (OOF @ thr CV)')
+            width = 0.38
+            
+            bars1 = ax1.bar(x - width/2, aucs, width, label='AUC (OOF)',
+                           color='#64B5F6', edgecolor='black', linewidth=1.5,
+                           hatch='//', alpha=0.9)
+            bars2 = ax1.bar(x + width/2, f1s, width, label='F1 (OOF @ limiar CV)',
+                           color='#81C784', edgecolor='black', linewidth=1.5,
+                           hatch='\\\\', alpha=0.9)
             ax1.set_xticks(x)
-            ax1.set_xticklabels(traits_plot, rotation=20)
-            ax1.set_ylim(0, 1)
-            ax1.set_ylabel('Score')
-            ax1.set_title('Resumo CV por Traço')
-            ax1.legend()
-            ax1.grid(True, alpha=0.3)
+            ax1.set_xticklabels(trait_labels_plot, rotation=0, fontsize=16)
+            ax1.set_ylim(0, 1.1)
+            ax1.set_ylabel('Escore', fontsize=18, fontweight='bold')
+            ax1.set_xlabel('Traços HEXACO', fontsize=18, fontweight='bold')
+            ax1.set_title('Resumo Validação Cruzada (OOF) por Traço', fontsize=20, fontweight='bold', pad=20)
+            ax1.legend(fontsize=15, frameon=True, shadow=True, loc='lower right')
+            ax1.axhline(y=0.5, color='#E53935', linestyle='--', linewidth=2.5, alpha=0.6, label='Linha de Base Aleatória')
+            apply_plot_style(ax1)
             plt.tight_layout()
             out = results_dir / "graphs" / "cv_summary.png"
             plt.savefig(out, dpi=300, bbox_inches='tight')
@@ -1023,7 +1059,7 @@ def create_visualizations(expanded_sets: Dict[str, Set[str]], initial_scores: Di
         
         # Gráfico 1: Comparação de escores por traço
         traits = ["HonestyHumility", "Emotionality", "Extraversion", "Agreeableness", "Conscientiousness", "OpennessToExperience"]
-        trait_labels = ["HonAST", "EmotAST", "ExtrAST", "AgreAST", "ConAST", "OpenAST"]
+        trait_labels = ["Hon-Hum", "Emoc", "Extr", "Cord", "Consc", "Abert"]
         initial_avg = []
         final_avg = []
         
@@ -1043,14 +1079,14 @@ def create_visualizations(expanded_sets: Dict[str, Set[str]], initial_scores: Di
         x = np.arange(len(traits))
         width = 0.35
         
-        bars1 = axes[0, 0].bar(x - width/2, initial_avg, width, label='Base Test', 
+        bars1 = axes[0, 0].bar(x - width/2, initial_avg, width, label='Inicial', 
                                color='#E57373', edgecolor='black', linewidth=1.5, 
                                hatch='//', alpha=0.9)
-        bars2 = axes[0, 0].bar(x + width/2, final_avg, width, label='Plus Test', 
+        bars2 = axes[0, 0].bar(x + width/2, final_avg, width, label='Refinado', 
                                color='#64B5F6', edgecolor='black', linewidth=1.5, 
                                hatch='\\\\', alpha=0.9)
         axes[0, 0].set_xlabel('Traços de Personalidade', fontsize=16, fontweight='bold')
-        axes[0, 0].set_ylabel('Score Positivo Médio', fontsize=16, fontweight='bold')
+        axes[0, 0].set_ylabel('Escore Positivo Médio', fontsize=16, fontweight='bold')
         axes[0, 0].set_title('Comparação de Escores por Traço', fontsize=18, fontweight='bold', pad=15)
         axes[0, 0].set_xticks(x)
         axes[0, 0].set_xticklabels(trait_labels, rotation=0, fontsize=14)
@@ -1087,11 +1123,11 @@ def create_visualizations(expanded_sets: Dict[str, Set[str]], initial_scores: Di
         if improvements:
             axes[1, 0].hist(improvements, bins=20, alpha=0.8, edgecolor='black', 
                            linewidth=1.5, color='#81C784')
-            axes[1, 0].set_xlabel('Melhoria no Score', fontsize=16, fontweight='bold')
+            axes[1, 0].set_xlabel('Melhoria no Escore', fontsize=16, fontweight='bold')
             axes[1, 0].set_ylabel('Frequência', fontsize=16, fontweight='bold')
             axes[1, 0].set_title('Distribuição de Melhorias nos Escores', fontsize=18, fontweight='bold', pad=15)
-            axes[1, 0].axvline(0, color='red', linestyle='--', linewidth=2.5, alpha=0.7, label='Sem melhoria')
-            axes[1, 0].legend(fontsize=13)
+            axes[1, 0].axvline(0, color='red', linestyle='--', linewidth=2.5, alpha=0.7, label='Sem Melhoria')
+            axes[1, 0].legend(fontsize=13, frameon=True, shadow=True)
             apply_plot_style(axes[1, 0])
         
         # Gráfico 4: Complexidade dos comandos vs Score
@@ -1106,9 +1142,9 @@ def create_visualizations(expanded_sets: Dict[str, Set[str]], initial_scores: Di
             complexities, scores = zip(*complexity_scores)
             axes[1, 1].scatter(complexities, scores, alpha=0.7, s=150, 
                               color='#BA68C8', edgecolors='black', linewidth=1.5)
-            axes[1, 1].set_xlabel('Complexidade do Comando (argumentos)', fontsize=16, fontweight='bold')
-            axes[1, 1].set_ylabel('Score Positivo Médio', fontsize=16, fontweight='bold')
-            axes[1, 1].set_title('Complexidade vs Score', fontsize=18, fontweight='bold', pad=15)
+            axes[1, 1].set_xlabel('Complexidade do Comando (nº argumentos)', fontsize=16, fontweight='bold')
+            axes[1, 1].set_ylabel('Escore Positivo Médio', fontsize=16, fontweight='bold')
+            axes[1, 1].set_title('Complexidade vs Escore', fontsize=18, fontweight='bold', pad=15)
             apply_plot_style(axes[1, 1])
         
         plt.tight_layout()
@@ -1127,7 +1163,7 @@ def create_visualizations(expanded_sets: Dict[str, Set[str]], initial_scores: Di
                     color='#E57373', markerfacecolor='#C62828', markeredgecolor='black',
                     markeredgewidth=1.5, label='Convergência')
         ax_conv.set_xlabel('Iteração do Random Walk', fontsize=18, fontweight='bold')
-        ax_conv.set_ylabel('Score de Convergência', fontsize=18, fontweight='bold')
+        ax_conv.set_ylabel('Escore de Convergência', fontsize=18, fontweight='bold')
         ax_conv.set_title('Convergência do Algoritmo Random Walk', fontsize=20, fontweight='bold', pad=20)
         ax_conv.legend(fontsize=14, frameon=True, shadow=True)
         apply_plot_style(ax_conv)
@@ -1311,7 +1347,8 @@ def create_stratified_holdout_split(expanded_sets: Dict[str, Set[str]],
     """
     logger.info(f"Criando split estratificado: {int((1-test_size)*100)}% treino, {int(test_size*100)}% hold-out...")
     
-    np.random.seed(random_state)
+    # Usa RandomState isolado para garantir reprodutibilidade
+    rng = np.random.RandomState(random_state)
     train_sets = {}
     holdout_sets = {}
     
@@ -1327,8 +1364,8 @@ def create_stratified_holdout_split(expanded_sets: Dict[str, Set[str]],
                 holdout_sets[key] = set()
                 continue
             
-            # Embaralha e divide
-            np.random.shuffle(commands)
+            # Embaralha e divide usando o RandomState isolado
+            rng.shuffle(commands)
             n_holdout = max(1, int(len(commands) * test_size))  # Pelo menos 1 amostra no hold-out
             
             holdout_sets[key] = set(commands[:n_holdout])
@@ -1493,6 +1530,9 @@ def generate_holdout_graphs(final_scores: Dict,
         logger.warning(f"Dependências indisponíveis ({e}); gráficos hold-out pulados.")
         return
     
+    # Aplicar estilo global
+    apply_plot_style(plt_module=plt)
+    
     graphs_dir = results_dir / "graphs" / "holdout"
     graphs_dir.mkdir(parents=True, exist_ok=True)
     
@@ -1531,22 +1571,30 @@ def generate_holdout_graphs(final_scores: Dict,
             auc_score = roc_auc_score(y_true, y_scores)
             pr_auc = auc_calc(rec, prec)
             
-            fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+            fig, axes = plt.subplots(1, 2, figsize=(16, 7))
             
-            axes[0].plot(fpr, tpr, label=f"AUC={auc_score:.3f}", linewidth=2)
-            axes[0].plot([0, 1], [0, 1], 'k--', alpha=0.4, label='Random')
-            axes[0].set_title(f"ROC Curve - {trait} (Hold-out)", fontsize=12, fontweight='bold')
-            axes[0].set_xlabel("False Positive Rate")
-            axes[0].set_ylabel("True Positive Rate")
-            axes[0].legend()
-            axes[0].grid(True, alpha=0.3)
+            # ROC Curve
+            axes[0].plot(fpr, tpr, linewidth=3.5, color='#E57373', label=f"AUC={auc_score:.3f}")
+            axes[0].plot([0, 1], [0, 1], 'k--', alpha=0.5, linewidth=2.5, label='Classificador Aleatório')
+            axes[0].fill_between(fpr, tpr, alpha=0.2, color='#E57373')
+            axes[0].set_title(f"Curva ROC - {trait} (Hold-out)", fontsize=20, fontweight='bold', pad=20)
+            axes[0].set_xlabel("Taxa de Falsos Positivos (FPR)", fontsize=18, fontweight='bold')
+            axes[0].set_ylabel("Taxa de Verdadeiros Positivos (TPR)", fontsize=18, fontweight='bold')
+            axes[0].legend(fontsize=15, frameon=True, shadow=True, loc='lower right')
+            axes[0].set_xlim([-0.02, 1.02])
+            axes[0].set_ylim([-0.02, 1.02])
+            apply_plot_style(axes[0])
             
-            axes[1].plot(rec, prec, label=f"PR-AUC={pr_auc:.3f}", linewidth=2)
-            axes[1].set_title(f"Precision-Recall - {trait} (Hold-out)", fontsize=12, fontweight='bold')
-            axes[1].set_xlabel("Recall")
-            axes[1].set_ylabel("Precision")
-            axes[1].legend()
-            axes[1].grid(True, alpha=0.3)
+            # PR Curve
+            axes[1].plot(rec, prec, linewidth=3.5, color='#64B5F6', label=f"AUC-PR={pr_auc:.3f}")
+            axes[1].fill_between(rec, prec, alpha=0.2, color='#64B5F6')
+            axes[1].set_title(f"Curva Precisão-Revocação - {trait} (Hold-out)", fontsize=20, fontweight='bold', pad=20)
+            axes[1].set_xlabel("Revocação (Recall)", fontsize=18, fontweight='bold')
+            axes[1].set_ylabel("Precisão", fontsize=18, fontweight='bold')
+            axes[1].legend(fontsize=15, frameon=True, shadow=True, loc='best')
+            axes[1].set_xlim([-0.02, 1.02])
+            axes[1].set_ylim([-0.02, 1.02])
+            apply_plot_style(axes[1])
             
             plt.tight_layout()
             plt.savefig(graphs_dir / f"roc_pr_{trait}.png", dpi=300, bbox_inches='tight')
@@ -1556,14 +1604,18 @@ def generate_holdout_graphs(final_scores: Dict,
             try:
                 prob_true, prob_pred = calibration_curve(y_true, y_scores, n_bins=min(10, max(2, len(y_true)//5)), strategy='uniform')
                 
-                plt.figure(figsize=(6, 6))
-                plt.plot([0, 1], [0, 1], 'k--', alpha=0.4, label='Perfeitamente calibrado')
-                plt.plot(prob_pred, prob_true, 'o-', linewidth=2, markersize=8, label='Modelo')
-                plt.title(f"Calibração - {trait} (Hold-out)", fontsize=12, fontweight='bold')
-                plt.xlabel("Confiança Prevista")
-                plt.ylabel("Frequência Observada")
-                plt.legend()
-                plt.grid(True, alpha=0.3)
+                fig_cal, ax_cal = plt.subplots(figsize=(8, 7))
+                ax_cal.plot([0, 1], [0, 1], 'k--', alpha=0.5, linewidth=2.5, label='Perfeitamente Calibrado')
+                ax_cal.plot(prob_pred, prob_true, 'o-', linewidth=3, markersize=12,
+                           color='#81C784', markerfacecolor='#388E3C', markeredgecolor='black',
+                           markeredgewidth=1.5, label='Modelo')
+                ax_cal.set_title(f"Diagrama de Calibração - {trait} (Hold-out)", fontsize=20, fontweight='bold', pad=20)
+                ax_cal.set_xlabel("Probabilidade Predita", fontsize=18, fontweight='bold')
+                ax_cal.set_ylabel("Fração de Positivos", fontsize=18, fontweight='bold')
+                ax_cal.legend(fontsize=15, frameon=True, shadow=True, loc='upper left')
+                ax_cal.set_xlim([-0.02, 1.02])
+                ax_cal.set_ylim([-0.02, 1.02])
+                apply_plot_style(ax_cal)
                 plt.tight_layout()
                 plt.savefig(graphs_dir / f"calibration_{trait}.png", dpi=300, bbox_inches='tight')
                 plt.close()
@@ -1583,22 +1635,28 @@ def generate_holdout_graphs(final_scores: Dict,
             y_pred = (y_scores >= best_thr).astype(int)
             cm = confusion_matrix(y_true, y_pred)
             
-            plt.figure(figsize=(6, 6))
+            fig_cm, ax_cm = plt.subplots(figsize=(8, 7))
             try:
                 import seaborn as sns
                 sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', cbar=False,
-                           xticklabels=["NEG", "POS"], yticklabels=["NEG", "POS"])
+                           xticklabels=["NEG", "POS"], yticklabels=["NEG", "POS"],
+                           annot_kws={"size": 18, "weight": "bold"},
+                           linewidths=2, linecolor='black', ax=ax_cm)
+                ax_cm.tick_params(labelsize=16)
             except Exception:
-                plt.imshow(cm, cmap='Blues')
+                ax_cm.imshow(cm, cmap='Blues')
                 for (i, j), val in np.ndenumerate(cm):
-                    plt.text(j, i, f"{val}", ha='center', va='center', fontsize=14)
-                plt.xticks([0, 1], ["NEG", "POS"])
-                plt.yticks([0, 1], ["NEG", "POS"])
+                    ax_cm.text(j, i, f"{val}", ha='center', va='center', 
+                              fontsize=18, fontweight='bold')
+                ax_cm.set_xticks([0, 1])
+                ax_cm.set_yticks([0, 1])
+                ax_cm.set_xticklabels(["NEG", "POS"], fontsize=16)
+                ax_cm.set_yticklabels(["NEG", "POS"], fontsize=16)
             
-            plt.title(f"Matriz de Confusão - {trait} (Hold-out)\nF1={best_f1:.3f} @ thr={best_thr:.2f}", 
-                     fontsize=12, fontweight='bold')
-            plt.xlabel("Predito")
-            plt.ylabel("Verdadeiro")
+            ax_cm.set_title(f"Matriz de Confusão - {trait} (Hold-out)\nF1={best_f1:.3f} @ limiar={best_thr:.2f}", 
+                           fontsize=20, fontweight='bold', pad=20)
+            ax_cm.set_xlabel("Predito", fontsize=18, fontweight='bold')
+            ax_cm.set_ylabel("Verdadeiro", fontsize=18, fontweight='bold')
             plt.tight_layout()
             plt.savefig(graphs_dir / f"confusion_{trait}.png", dpi=300, bbox_inches='tight')
             plt.close()
@@ -1628,6 +1686,9 @@ def generate_cv_vs_holdout_comparison(cv_report: Dict,
     except Exception as e:
         logger.warning(f"Matplotlib indisponível ({e}); gráfico comparativo pulado.")
         return
+    
+    # Aplicar estilo global
+    apply_plot_style(plt_module=plt)
     
     traits = ["HonestyHumility", "Emotionality", "Extraversion", "Agreeableness", "Conscientiousness", "OpennessToExperience"]
     
@@ -1662,33 +1723,46 @@ def generate_cv_vs_holdout_comparison(cv_report: Dict,
         return
     
     # Cria gráfico comparativo
-    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+    fig, axes = plt.subplots(1, 2, figsize=(18, 8))
     
     x = np.arange(len(trait_names))
-    width = 0.35
+    width = 0.38
+    
+    # Labels abreviados dos traços HEXACO
+    trait_short = ["Hon-Hum", "Emoc", "Extr", "Cord", "Consc", "Abert"]
     
     # AUC comparison
-    axes[0].bar(x - width/2, cv_aucs, width, label='CV (OOF)', alpha=0.8, color='steelblue')
-    axes[0].bar(x + width/2, holdout_aucs, width, label='Hold-out', alpha=0.8, color='coral')
+    bars1 = axes[0].bar(x - width/2, cv_aucs, width, label='CV (OOF)', 
+                        color='#64B5F6', edgecolor='black', linewidth=1.5, 
+                        hatch='//', alpha=0.9)
+    bars2 = axes[0].bar(x + width/2, holdout_aucs, width, label='Hold-out', 
+                        color='#E57373', edgecolor='black', linewidth=1.5, 
+                        hatch='\\\\', alpha=0.9)
     axes[0].set_xticks(x)
-    axes[0].set_xticklabels(trait_names, rotation=25, ha='right')
-    axes[0].set_ylim(0, 1)
-    axes[0].set_ylabel('AUC-ROC', fontsize=11)
-    axes[0].set_title('Comparação AUC: CV vs Hold-out', fontsize=12, fontweight='bold')
-    axes[0].legend()
-    axes[0].grid(True, alpha=0.3, axis='y')
-    axes[0].axhline(y=0.5, color='red', linestyle='--', alpha=0.3, label='Random')
+    axes[0].set_xticklabels(trait_short, rotation=0, fontsize=16)
+    axes[0].set_ylim(0, 1.05)
+    axes[0].set_ylabel('AUC-ROC', fontsize=18, fontweight='bold')
+    axes[0].set_xlabel('Traços HEXACO', fontsize=18, fontweight='bold')
+    axes[0].set_title('Comparação AUC: CV vs Hold-out', fontsize=20, fontweight='bold', pad=20)
+    axes[0].legend(fontsize=15, frameon=True, shadow=True, loc='lower right')
+    axes[0].axhline(y=0.5, color='#E53935', linestyle='--', linewidth=2.5, alpha=0.5, label='Aleatório')
+    apply_plot_style(axes[0])
     
     # F1 comparison
-    axes[1].bar(x - width/2, cv_f1s, width, label='CV (OOF @ thr CV)', alpha=0.8, color='steelblue')
-    axes[1].bar(x + width/2, holdout_f1s, width, label='Hold-out (@ best thr)', alpha=0.8, color='coral')
+    bars3 = axes[1].bar(x - width/2, cv_f1s, width, label='CV (OOF @ limiar CV)', 
+                        color='#64B5F6', edgecolor='black', linewidth=1.5, 
+                        hatch='//', alpha=0.9)
+    bars4 = axes[1].bar(x + width/2, holdout_f1s, width, label='Hold-out (@ melhor limiar)', 
+                        color='#E57373', edgecolor='black', linewidth=1.5, 
+                        hatch='\\\\', alpha=0.9)
     axes[1].set_xticks(x)
-    axes[1].set_xticklabels(trait_names, rotation=25, ha='right')
-    axes[1].set_ylim(0, 1)
-    axes[1].set_ylabel('F1-Score', fontsize=11)
-    axes[1].set_title('Comparação F1: CV vs Hold-out', fontsize=12, fontweight='bold')
-    axes[1].legend()
-    axes[1].grid(True, alpha=0.3, axis='y')
+    axes[1].set_xticklabels(trait_short, rotation=0, fontsize=16)
+    axes[1].set_ylim(0, 1.05)
+    axes[1].set_ylabel('F1-Score', fontsize=18, fontweight='bold')
+    axes[1].set_xlabel('Traços HEXACO', fontsize=18, fontweight='bold')
+    axes[1].set_title('Comparação F1: CV vs Hold-out', fontsize=20, fontweight='bold', pad=20)
+    axes[1].legend(fontsize=15, frameon=True, shadow=True, loc='lower right')
+    apply_plot_style(axes[1])
     
     plt.tight_layout()
     

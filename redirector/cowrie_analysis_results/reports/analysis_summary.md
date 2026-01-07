@@ -7,58 +7,58 @@
 - **Fator de amortecimento (α)**: 0.6
 
 ## Expansão dos Conjuntos Semente
-- **HonestyHumility_Positive**: 144 comandos
+- **HonestyHumility_Positive**: 145 comandos
 - **HonestyHumility_Negative**: 136 comandos
-- **Emotionality_Positive**: 137 comandos
+- **Emotionality_Positive**: 136 comandos
 - **Emotionality_Negative**: 116 comandos
-- **Extraversion_Positive**: 146 comandos
+- **Extraversion_Positive**: 148 comandos
 - **Extraversion_Negative**: 165 comandos
-- **Agreeableness_Positive**: 130 comandos
-- **Agreeableness_Negative**: 133 comandos
-- **Conscientiousness_Positive**: 152 comandos
+- **Agreeableness_Positive**: 129 comandos
+- **Agreeableness_Negative**: 139 comandos
+- **Conscientiousness_Positive**: 155 comandos
 - **Conscientiousness_Negative**: 138 comandos
-- **OpennessToExperience_Positive**: 161 comandos
+- **OpennessToExperience_Positive**: 167 comandos
 - **OpennessToExperience_Negative**: 150 comandos
 
 ## Métricas de Classificação
 - **Melhoria média nos escores**: 0.085
 - **Classificações com melhoria positiva**: 61/108
-- **Melhoria máxima**: 0.510
+- **Melhoria máxima**: 0.555
 
 ## Distribuição de Personalidade (Percentis)
 - **HonestyHumility**: 3 comandos (16.7%)
-- **Emotionality**: 2 comandos (11.1%)
-- **Extraversion**: 3 comandos (16.7%)
+- **Emotionality**: 3 comandos (16.7%)
+- **Extraversion**: 1 comandos (5.6%)
 - **Agreeableness**: 1 comandos (5.6%)
 - **Conscientiousness**: 2 comandos (11.1%)
-- **OpennessToExperience**: 7 comandos (38.9%)
+- **OpennessToExperience**: 8 comandos (44.4%)
 
 ## Perfil do Atacante (Baseado em Percentil da Média)
 
-- **Personalidade dominante**: OpennessToExperience (POSITIVO)
-- **Percentil da média**: 80.1%
-- **Interpretação**: A média do atacante é mais opennesstoexperience que 80% dos comandos
+- **Personalidade dominante**: Agreeableness (POSITIVO)
+- **Percentil da média**: 79.2%
+- **Interpretação**: A média do atacante é mais agreeableness que 79% dos comandos
 - **Comandos analisados**: 18
 
 ### Scores Médios Brutos:
-- **HonestyHumility**: 0.237
-- **Emotionality**: 0.283
-- **Extraversion**: 0.258
-- **Agreeableness**: 0.234
-- **Conscientiousness**: 0.258
-- **OpennessToExperience**: 0.354
+- **HonestyHumility**: 0.249
+- **Emotionality**: 0.331
+- **Extraversion**: 0.264
+- **Agreeableness**: 0.236
+- **Conscientiousness**: 0.227
+- **OpennessToExperience**: 0.359
 
 ### Percentis da Média:
-- **HonestyHumility**: 70.2% (POSITIVO)
-- **Emotionality**: 72.4% (POSITIVO)
-- **Extraversion**: 75.8% (POSITIVO)
-- **Agreeableness**: 73.6% (POSITIVO)
-- **Conscientiousness**: 71.7% (POSITIVO)
-- **OpennessToExperience**: 80.1% (POSITIVO)
+- **HonestyHumility**: 71.7% (POSITIVO)
+- **Emotionality**: 76.1% (POSITIVO)
+- **Extraversion**: 77.6% (POSITIVO)
+- **Agreeableness**: 79.2% (POSITIVO)
+- **Conscientiousness**: 68.2% (POSITIVO)
+- **OpennessToExperience**: 79.1% (POSITIVO)
 
 ### Análise Detalhada:
-→ Atacante criativo, emprega ferramentas inovadoras e exploratórias
-→ A média dos seus comandos demonstra alta abertura a experiências
+→ Atacante cooperativo, prefere comandos colaborativos e flexíveis
+→ A média dos seus comandos demonstra alta cordialidade
 
 ## Complexidade dos Comandos
 - **Complexidade média**: 0.9 argumentos
@@ -74,5 +74,3 @@
 
 ---
 *Relatório gerado automaticamente pelo Pipeline de Classificação Cowrie*
-
-- Δ médio (hold-out 20%): -0.018 (N=423)
