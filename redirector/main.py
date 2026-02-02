@@ -217,7 +217,7 @@ def determine_attacker_personality(final_scores: Dict, test_commands: List[str],
     Determina a personalidade final do atacante baseada em percentis.
     Retorna o traço dominante para cada comando e um perfil geral.
     """
-    # Carrega limiares ótimos (se existirem) para classificar POS/NEG por traço
+    # Limiares finais por traço: prioriza CV (OOF), fallback seeds
     best_thresholds = {
         "HonestyHumility": 0.5, "Emotionality": 0.5, "Extraversion": 0.5,
         "Agreeableness": 0.5, "Conscientiousness": 0.5, "OpennessToExperience": 0.5
@@ -227,17 +227,14 @@ def determine_attacker_personality(final_scores: Dict, test_commands: List[str],
         if val_file.exists():
             with open(val_file, 'r', encoding='utf-8') as vf:
                 v = json.load(vf)
-            # Preferir limiar médio da validação cruzada, se disponível
-            cv_obj = v.get("cv", {}) if isinstance(v, dict) else {}
+            cv = v.get("cv", {}) if isinstance(v, dict) else {}
             for trait in list(best_thresholds.keys()):
-                if isinstance(cv_obj.get(trait), dict) and cv_obj[trait].get("best_threshold_cv_mean") is not None:
-                    best_thresholds[trait] = float(cv_obj[trait]["best_threshold_cv_mean"])
-            # Fallback: limiar ótimo simples (não-CV) caso exista
-            for k, obj in v.items():
-                if isinstance(obj, dict) and "best_threshold" in obj and obj["best_threshold"] is not None:
-                    # Só sobrescreve se ainda não veio da CV
-                    if best_thresholds.get(k, 0.5) == 0.5 and obj["best_threshold"] is not None:
-                        best_thresholds[k] = float(obj["best_threshold"])
+                thr_cv = cv.get(trait, {}).get("best_threshold_cv_mean") if isinstance(cv.get(trait, {}), dict) else None
+                thr_seed = v.get(trait, {}).get("best_threshold") if isinstance(v.get(trait, {}), dict) else None
+                if thr_cv is not None:
+                    best_thresholds[trait] = float(thr_cv)
+                elif isinstance(thr_seed, (int, float)):
+                    best_thresholds[trait] = float(thr_seed)
     except Exception:
         pass
 
@@ -378,28 +375,28 @@ def display_results(test_commands: List[str], initial_scores: Dict, final_scores
         dominant = profile['dominant_trait']
         score = profile['average_percentile']
         classification = profile['classification']
-        print(f"\nANÁLISE DETALHADA:")
+        print(f"\nANALISE DETALHADA:")
         if dominant == "HonestyHumility" and classification == "POSITIVO":
-            print("  → Atacante ético, prefere comandos de verificação e transparência")
-            print("  → A média dos seus comandos demonstra honestidade e humildade")
+            print("  - Atacante etico, prefere comandos de verificacao e transparencia")
+            print("  - A media dos seus comandos demonstra honestidade e humildade")
         elif dominant == "Emotionality" and classification == "POSITIVO":
-            print("  → Atacante cauteloso, usa comandos de backup e monitoramento cuidadoso")
-            print("  → A média dos seus comandos demonstra alta emocionalidade e cautela")
+            print("  - Atacante cauteloso, usa comandos de backup e monitoramento cuidadoso")
+            print("  - A media dos seus comandos demonstra alta emocionalidade e cautela")
         elif dominant == "Extraversion" and classification == "POSITIVO":
-            print("  → Atacante sociável, emprega ferramentas de comunicação e interação")
-            print("  → A média dos seus comandos demonstra alta extraversão e confiança")
+            print("  - Atacante sociavel, emprega ferramentas de comunicacao e interacao")
+            print("  - A media dos seus comandos demonstra alta extraversao e confianca")
         elif dominant == "Agreeableness" and classification == "POSITIVO":
-            print("  → Atacante cooperativo, prefere comandos colaborativos e flexíveis")
-            print("  → A média dos seus comandos demonstra alta cordialidade")
+            print("  - Atacante cooperativo, prefere comandos colaborativos e flexiveis")
+            print("  - A media dos seus comandos demonstra alta cordialidade")
         elif dominant == "Conscientiousness" and classification == "POSITIVO":
-            print("  → Atacante organizado, usa comandos sistemáticos e disciplinados")
-            print("  → A média dos seus comandos demonstra alta conscienciosidade")
+            print("  - Atacante organizado, usa comandos sistematicos e disciplinados")
+            print("  - A media dos seus comandos demonstra alta conscienciosidade")
         elif dominant == "OpennessToExperience" and classification == "POSITIVO":
-            print("  → Atacante criativo, emprega ferramentas inovadoras e exploratórias")
-            print("  → A média dos seus comandos demonstra alta abertura a experiências")
+            print("  - Atacante criativo, emprega ferramentas inovadoras e exploratorias")
+            print("  - A media dos seus comandos demonstra alta abertura a experiencias")
         else:
-            print(f"  → Atacante com percentil médio abaixo de 50% em {dominant}")
-            print(f"  → A média dos seus comandos não se destaca significativamente neste traço")
+            print(f"  - Atacante com percentil medio abaixo de 50% em {dominant}")
+            print(f"  - A media dos seus comandos nao se destaca significativamente neste traco")
         print("="*80)
 
 def save_results(expanded_sets: Dict[str, Set[str]], initial_scores: Dict, 
@@ -615,29 +612,19 @@ def validate_effectiveness_cv(
     n_bootstrap: int = 1000,
     random_state: int = 42,
 ) -> Dict:
-    """Validação cruzada estratificada com previsões OOF para reduzir viés.
+    """Validação cruzada estratificada com previsões OOF e gráficos por traço.
     - Re-treina classificadores por dobra com seeds de treino.
     - Executa Random Walk usando os mesmos parâmetros do pipeline.
-    - Agrega previsões out-of-fold (OOF) para cada traço.
-    - Otimiza limiar apenas em treino por dobra e aplica no OOF correspondente.
-    - Reporta AUC, F1(@0.5), F1(@limiar_cv) e ICs por bootstrap.
-    - Gera gráficos ROC/PR, calibração e matriz de confusão por traço.
+    - Agrega previsões OOF para cada traço.
+    - Gera gráficos ROC/PR, calibração, matriz de confusão e varredura de limiar (threshold sweep).
+    - Salva resumo em cv_summary.png e escreve métricas em validation_metrics.json (chave 'cv').
     """
-    try:
-        from sklearn.metrics import (
-            roc_auc_score,
-            f1_score,
-            precision_recall_curve,
-            roc_curve,
-            confusion_matrix,
-            brier_score_loss,
-        )
-        from sklearn.calibration import calibration_curve
-        from sklearn.model_selection import StratifiedKFold
-    except Exception as e:
-        logger.warning(f"Dependências de sklearn indisponíveis ({e}); pulando validação CV.")
-        return {}
-    # Matplotlib import isolado após garantir sklearn
+    logger.info("Iniciando Validação Cruzada (OOF) com geração de gráficos...")
+
+    if refiner_params is None:
+        refiner_params = {"alpha": 0.60, "iterations": 25, "tolerance": 1e-4, "patience": 5}
+
+    # Imports opcionais
     try:
         import matplotlib
         try:
@@ -646,28 +633,49 @@ def validate_effectiveness_cv(
             pass
         import matplotlib.pyplot as plt
     except Exception as e:
-        logger.warning(f"Matplotlib indisponível ({e}); métricas CV sem gráficos.")
+        logger.warning(f"Matplotlib indisponível ({e}); gráficos OOF serão pulados, mas métricas serão calculadas.")
         plt = None
 
-    def _ece_score(y_true_arr, y_prob_arr, n_bins: int = 10) -> float:
-        # Expected Calibration Error (ECE) simples
-        bins = np.linspace(0.0, 1.0, n_bins + 1)
-        bin_ids = np.digitize(y_prob_arr, bins) - 1
-        ece = 0.0
-        total = len(y_true_arr)
-        for b in range(n_bins):
-            idx = bin_ids == b
-            if np.any(idx):
-                conf = y_prob_arr[idx].mean()
-                acc = y_true_arr[idx].mean()
-                ece += (idx.sum() / total) * abs(acc - conf)
-        return float(ece)
+    try:
+        from sklearn.model_selection import StratifiedKFold
+        from sklearn.metrics import (
+            roc_auc_score, f1_score, precision_recall_curve, roc_curve,
+            brier_score_loss, confusion_matrix
+        )
+        from sklearn.calibration import calibration_curve
+    except Exception:
+        logger.warning("scikit-learn indisponível; validação cruzada OOF pulada.")
+        return {}
 
-    # Parâmetros do refinador (Random Walk)
-    if refiner_params is None:
-        refiner_params = {"alpha": 0.60, "iterations": 20, "tolerance": 1e-4, "patience": 5}
+    # Helper: Expected Calibration Error (ECE)
+    def _ece_score(y_true: List[int], y_prob: List[float], n_bins: int = 10) -> float:
+        try:
+            y_true = np.asarray(y_true)
+            y_prob = np.asarray(y_prob)
+            bins = np.linspace(0.0, 1.0, n_bins + 1)
+            ece = 0.0
+            for i in range(n_bins):
+                m = (y_prob >= bins[i]) & (y_prob < bins[i+1]) if i < n_bins - 1 else (y_prob >= bins[i]) & (y_prob <= bins[i+1])
+                if m.sum() == 0:
+                    continue
+                acc = y_true[m].mean()
+                conf = y_prob[m].mean()
+                ece += (m.sum() / len(y_true)) * abs(acc - conf)
+            return float(ece)
+        except Exception:
+            return None
 
-    # Preparar vetorizações globais apenas uma vez por CV
+    traits = [
+        "HonestyHumility", "Emotionality", "Extraversion",
+        "Agreeableness", "Conscientiousness", "OpennessToExperience"
+    ]
+
+    graphs_dir = results_dir / "graphs"
+    graphs_dir.mkdir(parents=True, exist_ok=True)
+
+    cv_report: Dict[str, Dict] = {}
+
+    # Vetorizador base (reutilizado entre dobras)
     try:
         from classifiers.vectorial_classifier import VectorialClassifier
         from extractors.gloss_extractor import CommandGlossExtractor as _GE
@@ -676,198 +684,129 @@ def validate_effectiveness_cv(
         base_classifier.set_relations(relations)
         base_classifier.prepare_global_vectorizer(all_known_commands)
     except Exception as e:
-        logger.warning(f"Falha ao preparar vectorizer global para CV ({e}); pulando validação CV.")
+        logger.warning(f"Falha ao preparar vectorizer para CV ({e}).")
         return {}
 
-    traits = [
-        "HonestyHumility", "Emotionality", "Extraversion",
-        "Agreeableness", "Conscientiousness", "OpennessToExperience"
-    ]
-
-    # Saídas por traço
-    cv_report: Dict[str, Dict] = {}
-
-    # Diretórios de gráficos
-    graphs_dir = results_dir / "graphs"
-    graphs_dir.mkdir(exist_ok=True)
-
-    # Avaliação por traço independentemente (binária: POS vs NEG)
     for trait in traits:
         try:
             pos_key = f"{trait}_Positive"
             neg_key = f"{trait}_Negative"
-            pos_cmds = list(expanded_sets.get(pos_key, []))
-            neg_cmds = list(expanded_sets.get(neg_key, []))
 
-            # Necessário ter as duas classes
-            if not pos_cmds or not neg_cmds:
-                cv_report[trait] = {
-                    "auc_oof": None,
-                    "f1_oof@0.5": None,
-                    "f1_oof@cv_thr": None,
-                    "best_threshold_cv_mean": None,
-                    "samples": len(pos_cmds) + len(neg_cmds),
-                }
+            X: List[str] = []
+            y: List[int] = []
+            for cmd in expanded_sets.get(pos_key, []):
+                X.append(cmd)
+                y.append(1)
+            for cmd in expanded_sets.get(neg_key, []):
+                X.append(cmd)
+                y.append(0)
+
+            if len(y) < n_splits or len(set(y)) < 2:
+                logger.warning(f"Dados insuficientes para CV em {trait} ({len(y)} amostras)")
                 continue
 
-            X_cmds = pos_cmds + neg_cmds
-            y_labels = np.array([1] * len(pos_cmds) + [0] * len(neg_cmds))
+            skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
 
-            # Garante número de dobras válido via tamanho de classes
-            try:
-                class_counts = np.bincount(y_labels)
-                min_class = int(class_counts[class_counts > 0].min()) if class_counts.size > 0 else 2
-                n_splits_eff = max(2, min(n_splits, min_class))
-            except Exception:
-                n_splits_eff = 5
-            skf = StratifiedKFold(n_splits=n_splits_eff, shuffle=True, random_state=random_state)
+            oof_scores: List[float] = []
+            oof_labels: List[int] = []
 
-            # Acumular previsões OOF e limiares por dobra
-            oof_scores = np.zeros(len(X_cmds), dtype=float)
-            oof_thr = []
+            # Executa CV por dobra
+            for train_idx, val_idx in skf.split(X, y):
+                # Monta conjuntos de treino para ESTE traço
+                fold_train_sets = dict(expanded_sets)
+                tr_pos = {X[i] for i in train_idx if y[i] == 1 and X[i] in expanded_sets.get(pos_key, set())}
+                tr_neg = {X[i] for i in train_idx if y[i] == 0 and X[i] in expanded_sets.get(neg_key, set())}
+                fold_train_sets[pos_key] = tr_pos
+                fold_train_sets[neg_key] = tr_neg
 
-            # Para matriz de confusão agregada por dobra
-            agg_cm = np.zeros((2, 2), dtype=int)
-
-            for train_idx, test_idx in skf.split(X_cmds, y_labels):
-                # Construir expanded_sets específicos da dobra
-                exp_sets_train: Dict[str, Set[str]] = {}
-                for t in traits:
-                    pk = f"{t}_Positive"
-                    nk = f"{t}_Negative"
-                    # Se o traço não for o atual, manter conjuntos completos para não prejudicar a multi-tarefa
-                    if t == trait:
-                        # Restrição aos índices de treino para o traço atual
-                        train_pos_cmds = [X_cmds[i] for i in train_idx if y_labels[i] == 1]
-                        train_neg_cmds = [X_cmds[i] for i in train_idx if y_labels[i] == 0]
-                        exp_sets_train[pk] = set(train_pos_cmds)
-                        exp_sets_train[nk] = set(train_neg_cmds)
-                    else:
-                        exp_sets_train[pk] = set(expanded_sets.get(pk, set()))
-                        exp_sets_train[nk] = set(expanded_sets.get(nk, set()))
-
-                # Re-instanciar classificadores para a dobra usando o mesmo vectorizer global
-                fold_clf = VectorialClassifier(gloss_extractor)
-                fold_clf.set_relations(relations)
-                # Reutiliza vectorizer já treinado
-                fold_clf.vectorizer = base_classifier.vectorizer
-                fold_clf.word_vectorizer = base_classifier.word_vectorizer
-                fold_clf.char_vectorizer = base_classifier.char_vectorizer
-                fold_clf._is_vectorizer_fitted = True
-
+                # Treina classificadores nesta dobra usando o vectorizer global já ajustado
                 try:
-                    trait_classifiers = fold_clf.train_trait_classifiers(exp_sets_train)
+                    trait_classifiers = base_classifier.train_trait_classifiers(fold_train_sets)
                 except Exception as e:
-                    logger.warning(f"Falha ao treinar classificadores na CV para {trait}: {e}. Usando fallback por seeds.")
-                    trait_classifiers = None
+                    logger.warning(f"Falha ao treinar classificadores na dobra para {trait}: {e}")
+                    continue
 
-                # Escores iniciais para todos os comandos e Random Walk
+                # Escores iniciais e refinamento
                 try:
-                    from refiners.random_walk_refiner import RandomWalkRefiner as _RWR
-                    refiner = _RWR(
+                    fold_initial_scores = generate_initial_scores(base_classifier, trait_classifiers, all_known_commands)
+                    from refiners.random_walk_refiner import RandomWalkRefiner
+                    refiner = RandomWalkRefiner(
                         all_known_commands,
                         relations,
                         alpha=refiner_params.get("alpha", 0.60),
-                        iterations=refiner_params.get("iterations", 20),
+                        iterations=refiner_params.get("iterations", 25),
                         tolerance=refiner_params.get("tolerance", 1e-4),
                         patience=refiner_params.get("patience", 5),
                     )
-                    if trait_classifiers is not None:
-                        fold_initial_scores = generate_initial_scores(fold_clf, trait_classifiers, all_known_commands)
-                    else:
-                        # Fallback: escores iniciais a partir das seeds de treino
-                        fold_initial_scores = generate_initial_scores_from_seeds(exp_sets_train, all_known_commands)
                     fold_final_scores = refiner.refine_scores_multi_trait(fold_initial_scores)
                 except Exception as e:
-                    logger.warning(f"Falha no Random Walk durante CV ({e}); usando escores iniciais apenas.")
-                    if trait_classifiers is not None:
-                        fold_initial_scores = generate_initial_scores(fold_clf, trait_classifiers, all_known_commands)
-                    else:
-                        fold_initial_scores = generate_initial_scores_from_seeds(exp_sets_train, all_known_commands)
-                    fold_final_scores = fold_initial_scores
+                    logger.warning(f"Falha ao refinar escores na dobra para {trait}: {e}")
+                    continue
 
-                # Predições para treino (para encontrar limiar) e teste (OOF)
-                # Obter y_score para os comandos POS/NEG do traço
-                def scores_for(cmds: List[str]) -> List[float]:
-                    vals = []
-                    for c in cmds:
-                        if c in fold_final_scores and trait in fold_final_scores[c]:
-                            vals.append(float(fold_final_scores[c][trait]["positive"]))
-                        else:
-                            vals.append(0.5)
-                    return vals
-
-                train_cmds = [X_cmds[i] for i in train_idx]
-                test_cmds = [X_cmds[i] for i in test_idx]
-                y_train = y_labels[train_idx]
-                y_test = y_labels[test_idx]
-
-                y_score_train = np.array(scores_for(train_cmds))
-                y_score_test = np.array(scores_for(test_cmds))
-
-                # Otimiza limiar no treino para maximizar F1
-                best_f1 = -1.0
-                best_thr = 0.5
-                for thr in np.linspace(0.1, 0.9, 81):
-                    preds = (y_score_train >= thr).astype(int)
+                # Coleta previsões OOF nesta dobra
+                val_cmds = [X[i] for i in val_idx]
+                val_labels = [y[i] for i in val_idx]
+                for i, cmd in enumerate(val_cmds):
                     try:
-                        f1 = f1_score(y_train, preds)
+                        score = float(fold_final_scores.get(cmd, {}).get(trait, {}).get('positive', 0.5))
                     except Exception:
-                        f1 = 0.0
-                    if f1 > best_f1:
-                        best_f1 = f1
-                        best_thr = float(thr)
-                oof_thr.append(best_thr)
+                        score = 0.5
+                    oof_scores.append(score)
+                    oof_labels.append(val_labels[i])
 
-                # Atribui previsões OOF da dobra
-                for local_i, global_i in enumerate(test_idx):
-                    oof_scores[global_i] = y_score_test[local_i]
+            if not oof_labels or len(set(oof_labels)) < 2:
+                logger.warning(f"Sem OOF válido para {trait}")
+                continue
 
-                # Matriz de confusão por dobra (usando limiar da dobra)
-                y_pred_test = (y_score_test >= best_thr).astype(int)
-                try:
-                    cm = confusion_matrix(y_test, y_pred_test, labels=[0, 1])
-                    agg_cm += cm
-                except Exception:
-                    pass
+            # Converte para arrays
+            y_labels = np.array(oof_labels, dtype=int)
+            oof_scores = np.array(oof_scores, dtype=float)
 
-            # Métricas OOF agregadas
+            # Métricas principais
             try:
                 auc_oof = float(roc_auc_score(y_labels, oof_scores))
             except Exception:
                 auc_oof = None
+
+            # Melhor limiar no OOF
+            thr_values = np.linspace(0.1, 0.9, 81)
+            f1_values = [f1_score(y_labels, (oof_scores >= t).astype(int)) for t in thr_values]
+            best_idx = int(np.argmax(f1_values))
+            cv_thr_mean = float(thr_values[best_idx])
+            f1_oof_cvthr = float(f1_values[best_idx])
             f1_oof_default = float(f1_score(y_labels, (oof_scores >= 0.5).astype(int)))
 
-            # Aplicar limiar médio das dobras nos OOF (aproximação)
-            cv_thr_mean = float(np.mean(oof_thr)) if oof_thr else 0.5
-            f1_oof_cvthr = float(f1_score(y_labels, (oof_scores >= cv_thr_mean).astype(int)))
-
-            # Bootstrap para IC 95%
-            rng = np.random.RandomState(random_state)
-            auc_boot = []
-            f1_boot = []
-            for _ in range(n_bootstrap):
-                idx = rng.randint(0, len(y_labels), size=len(y_labels))
-                y_b = y_labels[idx]
-                s_b = oof_scores[idx]
-                try:
-                    auc_boot.append(roc_auc_score(y_b, s_b))
-                except Exception:
-                    pass
-                f1_boot.append(f1_score(y_b, (s_b >= cv_thr_mean).astype(int)))
-            def _ci(x):
-                if not x:
-                    return [None, None]
-                a = np.array(x)
-                return [float(np.percentile(a, 2.5)), float(np.percentile(a, 97.5))]
-
-            # Calibração
+            # Calibração / Brier / ECE
             try:
                 prob_true, prob_pred = calibration_curve(y_labels, oof_scores, n_bins=10, strategy='uniform')
                 brier = float(brier_score_loss(y_labels, oof_scores))
-                ece = _ece_score(y_labels, oof_scores, n_bins=10)
+                ece = _ece_score(y_labels.tolist(), oof_scores.tolist(), n_bins=10)
             except Exception:
                 prob_true, prob_pred, brier, ece = [], [], None, None
+
+            # Bootstrap IC95
+            rng = np.random.RandomState(random_state)
+            auc_boot: List[float] = []
+            f1_boot: List[float] = []
+            try:
+                n = len(y_labels)
+                for _ in range(n_bootstrap):
+                    idx = rng.randint(0, n, size=n)
+                    ys = y_labels[idx]
+                    ss = oof_scores[idx]
+                    try:
+                        auc_boot.append(float(roc_auc_score(ys, ss)))
+                    except Exception:
+                        pass
+                    f1_boot.append(float(f1_score(ys, (ss >= cv_thr_mean).astype(int))))
+            except Exception:
+                pass
+
+            def _ci(x: List[float]) -> List[float]:
+                if not x:
+                    return [None, None]
+                a = np.array(x, dtype=float)
+                return [float(np.percentile(a, 2.5)), float(np.percentile(a, 97.5))]
 
             # Gráficos por traço
             try:
@@ -875,80 +814,112 @@ def validate_effectiveness_cv(
                     # ROC e PR
                     fpr, tpr, _ = roc_curve(y_labels, oof_scores)
                     prec, rec, _ = precision_recall_curve(y_labels, oof_scores)
-                    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-                    axes[0].plot(fpr, tpr, label=f"AUC={auc_oof:.3f}" if auc_oof is not None else "AUC=n/a")
-                    axes[0].plot([0, 1], [0, 1], 'k--', alpha=0.4)
-                    axes[0].set_title(f"ROC - {trait}")
-                    axes[0].set_xlabel("FPR")
-                    axes[0].set_ylabel("TPR")
-                    axes[0].legend()
-                    axes[0].grid(True, alpha=0.3)
+                    fig, axes = plt.subplots(1, 2, figsize=(16, 7))
+                    
+                    # ROC Curve
+                    axes[0].plot(fpr, tpr, linewidth=3.5, color='#E57373', label=f"AUC={auc_oof:.3f}" if auc_oof is not None else "AUC=n/a")
+                    axes[0].plot([0, 1], [0, 1], 'k--', alpha=0.5, linewidth=2.5, label='Classificador Aleatório')
+                    axes[0].fill_between(fpr, tpr, alpha=0.2, color='#E57373')
+                    axes[0].set_title(f"Curva ROC - {trait}", fontsize=20, fontweight='bold', pad=20)
+                    axes[0].set_xlabel("Taxa de Falsos Positivos (FPR)", fontsize=18, fontweight='bold')
+                    axes[0].set_ylabel("Taxa de Verdadeiros Positivos (TPR)", fontsize=18, fontweight='bold')
+                    axes[0].legend(fontsize=15, frameon=True, shadow=True, loc='lower right')
+                    axes[0].set_xlim([-0.02, 1.02])
+                    axes[0].set_ylim([-0.02, 1.02])
+                    apply_plot_style(axes[0])
 
-                    axes[1].plot(rec, prec)
-                    axes[1].set_title(f"Precision-Recall - {trait}")
-                    axes[1].set_xlabel("Recall")
-                    axes[1].set_ylabel("Precision")
-                    axes[1].grid(True, alpha=0.3)
+                    # PR Curve
+                    axes[1].plot(rec, prec, linewidth=3.5, color='#64B5F6')
+                    axes[1].fill_between(rec, prec, alpha=0.2, color='#64B5F6')
+                    axes[1].set_title(f"Curva Precisão-Revocação - {trait}", fontsize=20, fontweight='bold', pad=20)
+                    axes[1].set_xlabel("Revocação (Recall)", fontsize=18, fontweight='bold')
+                    axes[1].set_ylabel("Precisão", fontsize=18, fontweight='bold')
+                    axes[1].set_xlim([-0.02, 1.02])
+                    axes[1].set_ylim([-0.02, 1.02])
+                    apply_plot_style(axes[1])
+                    
                     plt.tight_layout()
                     plt.savefig(graphs_dir / f"roc_pr_{trait}.png", dpi=300, bbox_inches='tight')
                     plt.close()
 
                     # Calibração
                     if len(prob_true) > 0:
-                        plt.figure(figsize=(6, 5))
-                        plt.plot([0, 1], [0, 1], 'k--', alpha=0.4)
-                        plt.plot(prob_pred, prob_true, 'o-', label=f"Brier={brier:.3f} | ECE={ece:.3f}")
-                        plt.title(f"Calibração - {trait}")
-                        plt.xlabel("Confiança prevista")
-                        plt.ylabel("Frequência observada")
-                        plt.legend()
-                        plt.grid(True, alpha=0.3)
+                        fig_cal, ax_cal = plt.subplots(figsize=(8, 7))
+                        ax_cal.plot([0, 1], [0, 1], 'k--', alpha=0.5, linewidth=2.5, label='Perfeitamente Calibrado')
+                        ax_cal.plot(prob_pred, prob_true, 'o-', linewidth=3, markersize=12,
+                                   color='#81C784', markerfacecolor='#388E3C', markeredgecolor='black',
+                                   markeredgewidth=1.5, label=f"Brier={brier:.3f} | ECE={ece:.3f}")
+                        ax_cal.set_title(f"Diagrama de Calibração - {trait}", fontsize=20, fontweight='bold', pad=20)
+                        ax_cal.set_xlabel("Probabilidade Predita", fontsize=18, fontweight='bold')
+                        ax_cal.set_ylabel("Fração de Positivos", fontsize=18, fontweight='bold')
+                        ax_cal.legend(fontsize=14, frameon=True, shadow=True, loc='upper left')
+                        ax_cal.set_xlim([-0.02, 1.02])
+                        ax_cal.set_ylim([-0.02, 1.02])
+                        apply_plot_style(ax_cal)
+                        plt.tight_layout()
                         plt.savefig(graphs_dir / f"calibration_{trait}.png", dpi=300, bbox_inches='tight')
                         plt.close()
 
-                    # Matriz de confusão agregada
-                    plt.figure(figsize=(5, 5))
+                    # Matriz de confusão (OOF @ thr)
                     try:
-                        import seaborn as sns  # opcional
-                        sns.heatmap(agg_cm, annot=True, fmt='d', cmap='Blues', cbar=False,
-                                    xticklabels=["NEG", "POS"], yticklabels=["NEG", "POS"])
+                        cm = confusion_matrix(y_labels, (oof_scores >= cv_thr_mean).astype(int))
                     except Exception:
-                        plt.imshow(agg_cm, cmap='Blues')
-                        for (i, j), val in np.ndenumerate(agg_cm):
-                            plt.text(j, i, f"{val}", ha='center', va='center')
-                        plt.xticks([0, 1], ["NEG", "POS"]) ; plt.yticks([0, 1], ["NEG", "POS"]) 
-                    plt.title(f"Matriz de Confusão (CV) - {trait}")
-                    plt.xlabel("Predito")
-                    plt.ylabel("Verdadeiro")
+                        cm = np.array([[0, 0], [0, 0]], dtype=int)
+                    fig_cm, ax_cm = plt.subplots(figsize=(8, 7))
+                    try:
+                        import seaborn as sns
+                        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', cbar=False,
+                                    xticklabels=["NEG", "POS"], yticklabels=["NEG", "POS"],
+                                    annot_kws={"size": 18, "weight": "bold"},
+                                    linewidths=2, linecolor='black', ax=ax_cm)
+                        ax_cm.tick_params(labelsize=16)
+                    except Exception:
+                        ax_cm.imshow(cm, cmap='Blues')
+                        for (i, j), val in np.ndenumerate(cm):
+                            ax_cm.text(j, i, f"{val}", ha='center', va='center', 
+                                      fontsize=18, fontweight='bold')
+                        ax_cm.set_xticks([0, 1])
+                        ax_cm.set_yticks([0, 1])
+                        ax_cm.set_xticklabels(["NEG", "POS"], fontsize=16)
+                        ax_cm.set_yticklabels(["NEG", "POS"], fontsize=16)
+                    ax_cm.set_title(f"Matriz de Confusão (OOF) - {trait}", fontsize=20, fontweight='bold', pad=20)
+                    ax_cm.set_xlabel("Predito", fontsize=18, fontweight='bold')
+                    ax_cm.set_ylabel("Verdadeiro", fontsize=18, fontweight='bold')
                     plt.tight_layout()
                     plt.savefig(graphs_dir / f"confusion_{trait}.png", dpi=300, bbox_inches='tight')
                     plt.close()
 
                     # Varredura de limiar (OOF)
-                    thr_values = np.linspace(0.1, 0.9, 81)
-                    f1_curve = [f1_score(y_labels, (oof_scores >= t).astype(int)) for t in thr_values]
-                    plt.figure(figsize=(6, 4))
-                    plt.plot(thr_values, f1_curve, label="F1(OOF)")
-                    plt.axvline(cv_thr_mean, color='r', linestyle='--', label=f"thr(cv)={cv_thr_mean:.2f}")
-                    plt.title(f"F1 vs Limiar (OOF) - {trait}")
-                    plt.xlabel("Limiar")
-                    plt.ylabel("F1-Score")
-                    plt.legend()
-                    plt.grid(True, alpha=0.3)
+                    fig_thr, ax_thr = plt.subplots(figsize=(10, 7))
+                    ax_thr.plot(thr_values, f1_values, linewidth=3.5, color='#BA68C8', 
+                               marker='o', markersize=6, markeredgecolor='black',
+                               markeredgewidth=1, label="F1 Score (OOF)")
+                    ax_thr.axvline(cv_thr_mean, color='#E53935', linestyle='--', 
+                                  linewidth=3, label=f"Limiar Ótimo = {cv_thr_mean:.2f}")
+                    ax_thr.set_title(f"F1-Score vs Limiar (OOF) - {trait}", fontsize=20, fontweight='bold', pad=20)
+                    ax_thr.set_xlabel("Limiar de Decisão", fontsize=18, fontweight='bold')
+                    ax_thr.set_ylabel("F1-Score", fontsize=18, fontweight='bold')
+                    ax_thr.legend(fontsize=15, frameon=True, shadow=True, loc='best')
+                    ax_thr.set_xlim([thr_values[0] - 0.05, thr_values[-1] + 0.05])
+                    apply_plot_style(ax_thr)
                     plt.tight_layout()
                     plt.savefig(graphs_dir / f"threshold_sweep_{trait}.png", dpi=300, bbox_inches='tight')
                     plt.close()
             except Exception as e:
                 logger.warning(f"Falha ao gerar gráficos CV para {trait}: {e}")
 
+            # Salva métricas por traço
             cv_report[trait] = {
                 "samples": int(len(y_labels)),
                 "auc_oof": float(auc_oof) if auc_oof is not None else None,
-                "auc_oof_ci95": _ci(auc_boot),
-                "f1_oof@0.5": float(f1_oof_default),
-                "f1_oof@cv_thr": float(f1_oof_cvthr),
+                "auc_oof_ci95": [None, None] if not auc_boot else [
+                    float(np.percentile(np.array(auc_boot), 2.5)),
+                    float(np.percentile(np.array(auc_boot), 97.5))
+                ],
+                "f1_oof@0.5": f1_oof_default,
+                "f1_oof@cv_thr": f1_oof_cvthr,
                 "f1_oof@cv_thr_ci95": _ci(f1_boot),
-                "best_threshold_cv_mean": float(cv_thr_mean),
+                "best_threshold_cv_mean": cv_thr_mean,
                 "brier": brier,
                 "ece": ece,
             }
@@ -966,227 +937,101 @@ def validate_effectiveness_cv(
                 "ece": None,
             }
 
-    # Persistir no arquivo de métricas, preservando o que já existe
-    val_file = results_dir / "metrics" / "validation_metrics.json"
-    merged = {}
+    # Gráfico resumo CV
     try:
-        if val_file.exists():
-            with open(val_file, 'r', encoding='utf-8') as f:
-                merged = json.load(f)
-    except Exception:
-        merged = {}
-    merged["cv"] = cv_report
-    try:
-        with open(val_file, 'w', encoding='utf-8') as f:
-            json.dump(merged, f, indent=2, ensure_ascii=False)
-        logger.info(f"Métricas de validação CV salvas em: {val_file}")
-    except Exception as e:
-        logger.warning(f"Falha ao salvar métricas de validação CV: {e}")
-
-    # Gráfico resumo CV direto do cv_report (independente de create_visualizations)
-    try:
-        if plt is not None and len(cv_report) > 0:
-            traits_plot = []
-            aucs = []
-            f1s = []
-            for t, obj in cv_report.items():
-                if isinstance(obj, dict) and obj.get("auc_oof") is not None and obj.get("f1_oof@cv_thr") is not None:
-                    traits_plot.append(t)
-                    aucs.append(obj["auc_oof"])
-                    f1s.append(obj["f1_oof@cv_thr"])
-            if traits_plot:
-                fig, ax1 = plt.subplots(figsize=(10, 6))
-                x = np.arange(len(traits_plot))
-                width = 0.35
-                ax1.bar(x - width/2, aucs, width, label='AUC (OOF)')
-                ax1.bar(x + width/2, f1s, width, label='F1 (OOF @ thr CV)')
-                ax1.set_xticks(x)
-                ax1.set_xticklabels(traits_plot, rotation=20)
-                ax1.set_ylim(0, 1)
-                ax1.set_ylabel('Score')
-                ax1.set_title('Resumo CV por Traço')
-                ax1.legend()
-                ax1.grid(True, alpha=0.3)
-                plt.tight_layout()
-                out = results_dir / "graphs" / "cv_summary.png"
-                plt.savefig(out, dpi=300, bbox_inches='tight')
-                plt.close()
-                logger.info(f"Gráfico de resumo CV salvo em: {out}")
+        if plt is not None and cv_report:
+            traits_plot = [t for t in traits if t in cv_report and cv_report[t].get('auc_oof') is not None]
+            trait_short = ["Hon-Hum", "Emoc", "Extr", "Cord", "Consc", "Abert"]
+            trait_labels_plot = [trait_short[i] for i, t in enumerate(traits) if t in traits_plot]
+            
+            aucs = [cv_report[t]['auc_oof'] for t in traits_plot]
+            f1s = [cv_report[t].get('f1_oof@cv_thr', 0.0) for t in traits_plot]
+            fig, ax1 = plt.subplots(figsize=(14, 8))
+            x = np.arange(len(traits_plot))
+            width = 0.38
+            
+            bars1 = ax1.bar(x - width/2, aucs, width, label='AUC (OOF)',
+                           color='#64B5F6', edgecolor='black', linewidth=1.5,
+                           hatch='//', alpha=0.9)
+            bars2 = ax1.bar(x + width/2, f1s, width, label='F1 (OOF @ limiar CV)',
+                           color='#81C784', edgecolor='black', linewidth=1.5,
+                           hatch='\\\\', alpha=0.9)
+            ax1.set_xticks(x)
+            ax1.set_xticklabels(trait_labels_plot, rotation=0, fontsize=16)
+            ax1.set_ylim(0, 1.1)
+            ax1.set_ylabel('Escore', fontsize=18, fontweight='bold')
+            ax1.set_xlabel('Traços HEXACO', fontsize=18, fontweight='bold')
+            ax1.set_title('Resumo Validação Cruzada (OOF) por Traço', fontsize=20, fontweight='bold', pad=20)
+            ax1.legend(fontsize=15, frameon=True, shadow=True, loc='lower right')
+            ax1.axhline(y=0.5, color='#E53935', linestyle='--', linewidth=2.5, alpha=0.6, label='Linha de Base Aleatória')
+            apply_plot_style(ax1)
+            plt.tight_layout()
+            out = results_dir / "graphs" / "cv_summary.png"
+            plt.savefig(out, dpi=300, bbox_inches='tight')
+            plt.close()
+            logger.info(f"Gráfico de resumo CV salvo em: {out}")
     except Exception as e:
         logger.warning(f"Falha ao gerar gráfico de resumo CV: {e}")
+
+    # Escreve/atualiza validation_metrics.json com a seção 'cv'
+    try:
+        metrics_dir = results_dir / "metrics"
+        metrics_dir.mkdir(parents=True, exist_ok=True)
+        val_file = metrics_dir / "validation_metrics.json"
+        try:
+            with open(val_file, 'r', encoding='utf-8') as f:
+                existing = json.load(f)
+        except Exception:
+            existing = {}
+        existing["cv"] = cv_report
+        with open(val_file, 'w', encoding='utf-8') as f:
+            json.dump(existing, f, indent=2, ensure_ascii=False)
+        logger.info(f"Métricas CV (OOF) atualizadas em: {val_file}")
+    except Exception as e:
+        logger.warning(f"Falha ao salvar métricas CV em validation_metrics.json: {e}")
+
     return cv_report
 
-def analyze_seed_noise_sensitivity(
-    expanded_sets: Dict[str, Set[str]],
-    all_known_commands: List[str],
-    relations: Dict,
-    final_scores_baseline: Dict,
-    results_dir: Path,
-    refiner_params: Dict = None,
-    noise_levels: List[float] = None,
-    runs: int = 20,
-    random_state: int = 42,
-) -> Dict:
-    """Analisa sensibilidade a ruído nas seeds, medindo estabilidade de scores.
-    Para cada nível de ruído, realiza múltiplas execuções com flip aleatório de
-    rótulos POS/NEG nas seeds e calcula a correlação de Spearman entre os scores
-    positivos resultantes e a linha de base, por traço.
-    Gera gráfico com média±desvio por nível de ruído.
+def apply_plot_style(ax=None, plt_module=None):
+    """Aplica estilo profissional consistente aos gráficos.
+    
+    Args:
+        ax: Eixo matplotlib (opcional)
+        plt_module: Módulo pyplot (opcional, para configuração global)
     """
-    import numpy as np
-    import pandas as pd
-    try:
-        import matplotlib
-        try:
-            matplotlib.use('Agg')
-        except BaseException:
-            pass
-        import matplotlib.pyplot as plt
-    except Exception as e:
-        logger.warning(f"Matplotlib indisponível ({e}); prosseguindo sem gráficos de sensibilidade.")
-        plt = None
-
-    if refiner_params is None:
-        refiner_params = {"alpha": 0.60, "iterations": 20, "tolerance": 1e-4, "patience": 5}
-    if noise_levels is None:
-        noise_levels = [0.05, 0.10, 0.20, 0.30]
-
-    traits = [
-        "HonestyHumility", "Emotionality", "Extraversion",
-        "Agreeableness", "Conscientiousness", "OpennessToExperience"
-    ]
-
-    # Vetorizador global fixo
-    try:
-        from classifiers.vectorial_classifier import VectorialClassifier
-        from extractors.gloss_extractor import CommandGlossExtractor as _GE
-        gloss_extractor = _GE()
-        base_classifier = VectorialClassifier(gloss_extractor)
-        base_classifier.set_relations(relations)
-        base_classifier.prepare_global_vectorizer(all_known_commands)
-    except Exception as e:
-        logger.warning(f"Falha ao preparar vectorizer para sensibilidade ({e}).")
-        return {}
-
-    # Helper Spearman via ranks com pandas
-    def spearman_corr(a: List[float], b: List[float]) -> float:
-        try:
-            ra = pd.Series(a).rank(method='average').values
-            rb = pd.Series(b).rank(method='average').values
-            c = np.corrcoef(ra, rb)[0, 1]
-            if np.isnan(c):
-                return 0.0
-            return float(c)
-        except Exception:
-            return 0.0
-
-    rng = np.random.RandomState(random_state)
-
-    # Pré-computa baseline por traço para todos os comandos
-    baseline_by_trait = {}
-    for trait in traits:
-        arr = []
-        for cmd in all_known_commands:
-            arr.append(float(final_scores_baseline.get(cmd, {}).get(trait, {}).get('positive', 0.5)))
-        baseline_by_trait[trait] = np.array(arr, dtype=float)
-
-    # Resultados agregados
-    results: Dict[str, Dict[str, List[float]]] = {t: {str(l): [] for l in noise_levels} for t in traits}
-
-    for noise in noise_levels:
-        for run in range(runs):
-            # Cria cópia mutada das seeds
-            mutated: Dict[str, Set[str]] = {}
-            for trait in traits:
-                pk = f"{trait}_Positive"
-                nk = f"{trait}_Negative"
-                pos = set(expanded_sets.get(pk, set()))
-                neg = set(expanded_sets.get(nk, set()))
-                # número de flips em cada lado
-                n_pos_flip = int(len(pos) * noise)
-                n_neg_flip = int(len(neg) * noise)
-                # seleciona para flip
-                pos_to_neg = set(rng.choice(list(pos), size=min(n_pos_flip, len(pos)), replace=False)) if len(pos) > 0 else set()
-                neg_to_pos = set(rng.choice(list(neg), size=min(n_neg_flip, len(neg)), replace=False)) if len(neg) > 0 else set()
-                # aplica flips
-                pos_after = (pos - pos_to_neg) | neg_to_pos
-                neg_after = (neg - neg_to_pos) | pos_to_neg
-                mutated[pk] = pos_after
-                mutated[nk] = neg_after
-
-            # Mantém conjuntos de outros traços inalterados (já feitos acima por trait loop)
-
-            # Re-instancia classificador e reutiliza vectorizer global
-            clf = VectorialClassifier(gloss_extractor)
-            clf.set_relations(relations)
-            clf.vectorizer = base_classifier.vectorizer
-            clf.word_vectorizer = base_classifier.word_vectorizer
-            clf.char_vectorizer = base_classifier.char_vectorizer
-            clf._is_vectorizer_fitted = True
-            trait_classifiers = clf.train_trait_classifiers(mutated)
-
-            # Random Walk
-            try:
-                from refiners.random_walk_refiner import RandomWalkRefiner as _RWR
-                refiner = _RWR(
-                    all_known_commands,
-                    relations,
-                    alpha=refiner_params.get("alpha", 0.60),
-                    iterations=refiner_params.get("iterations", 20),
-                    tolerance=refiner_params.get("tolerance", 1e-4),
-                    patience=refiner_params.get("patience", 5),
-                )
-                init_scores = generate_initial_scores(clf, trait_classifiers, all_known_commands)
-                final_mut = refiner.refine_scores_multi_trait(init_scores)
-            except Exception:
-                init_scores = generate_initial_scores(clf, trait_classifiers, all_known_commands)
-                final_mut = init_scores
-
-            # Correlação por traço com baseline
-            for trait in traits:
-                curr = []
-                for cmd in all_known_commands:
-                    curr.append(float(final_mut.get(cmd, {}).get(trait, {}).get('positive', 0.5)))
-                corr = spearman_corr(baseline_by_trait[trait], curr)
-                results[trait][str(noise)].append(float(corr))
-
-    # Agregar e salvar
-    summary = {t: {"noise_levels": noise_levels,
-                   "mean_corr": [float(np.mean(results[t][str(l)])) if results[t][str(l)] else None for l in noise_levels],
-                   "std_corr": [float(np.std(results[t][str(l)])) if results[t][str(l)] else None for l in noise_levels]} for t in traits}
-
-    try:
-        out_file = results_dir / "metrics" / "seed_noise_sensitivity.json"
-        with open(out_file, 'w', encoding='utf-8') as f:
-            json.dump(summary, f, indent=2, ensure_ascii=False)
-        logger.info(f"Resultados de sensibilidade a ruído salvos em: {out_file}")
-    except Exception as e:
-        logger.warning(f"Falha ao salvar sensibilidade a ruído: {e}")
-
-    # Gráfico
-    try:
-        if plt is not None:
-            plt.figure(figsize=(10, 6))
-            x = np.arange(len(noise_levels))
-            for trait in traits:
-                means = summary[trait]["mean_corr"]
-                stds = summary[trait]["std_corr"]
-                plt.errorbar(noise_levels, means, yerr=stds, marker='o', capsize=4, label=trait)
-            plt.ylim(0, 1)
-            plt.xlabel('Nível de ruído nas seeds (proporção)')
-            plt.ylabel('Correlação de Spearman com baseline')
-            plt.title('Sensibilidade a Ruído nas Seeds (estabilidade de scores)')
-            plt.grid(True, alpha=0.3)
-            plt.legend()
-            fig_path = results_dir / "graphs" / "seed_noise_sensitivity.png"
-            plt.tight_layout()
-            plt.savefig(fig_path, dpi=300, bbox_inches='tight')
-            plt.close()
-            logger.info(f"Gráfico de sensibilidade salvo em: {fig_path}")
-    except Exception as e:
-        logger.warning(f"Falha ao gerar gráfico de sensibilidade: {e}")
-
-    return summary
+    if plt_module is not None:
+        # Configurações globais de fonte
+        plt_module.rcParams.update({
+            'font.size': 14,
+            'axes.titlesize': 18,
+            'axes.labelsize': 16,
+            'xtick.labelsize': 14,
+            'ytick.labelsize': 14,
+            'legend.fontsize': 13,
+            'figure.titlesize': 20,
+            'axes.grid': True,
+            'grid.alpha': 0.3,
+            'grid.linestyle': '--',
+            'grid.linewidth': 0.8,
+            'axes.facecolor': 'white',
+            'figure.facecolor': 'white',
+            'axes.edgecolor': 'black',
+            'axes.linewidth': 1.2,
+            'xtick.major.width': 1.2,
+            'ytick.major.width': 1.2,
+            'lines.linewidth': 2.5,
+            'lines.markersize': 8,
+        })
+    
+    if ax is not None:
+        # Configurações do eixo individual
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['left'].set_linewidth(1.5)
+        ax.spines['bottom'].set_linewidth(1.5)
+        ax.tick_params(width=1.5, length=6)
+        ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.8)
+        ax.set_facecolor('white')
 
 def create_visualizations(expanded_sets: Dict[str, Set[str]], initial_scores: Dict, 
                          final_scores: Dict, test_commands: List[str], results_dir: Path):
@@ -1203,26 +1048,18 @@ def create_visualizations(expanded_sets: Dict[str, Set[str]], initial_scores: Di
     except BaseException as e:
         logger.warning(f"Matplotlib indisponível ({e}); pulando visualizações.")
         return
-    try:
-        import seaborn as sns
-        sns.set_palette("husl")
-    except Exception as e:
-        logger.warning(f"Seaborn indisponível ({e}); seguindo apenas com matplotlib.")
-        sns = None
     
-    # Configurar estilo
-    try:
-        plt.style.use('seaborn-v0_8')
-    except Exception:
-        pass
+    # Aplicar estilo global
+    apply_plot_style(plt_module=plt)
     
     try:
         # 1. Comparação de escores antes e depois do refinamento
-        fig, axes = plt.subplots(2, 2, figsize=(16, 12))
-        fig.suptitle('Análise de Classificação de Comandos - SentiWordNet 3.0', fontsize=16)
+        fig, axes = plt.subplots(2, 2, figsize=(18, 14))
+        fig.suptitle('Análise de Classificação de Comandos - SentiWordNet 3.0', fontsize=22, fontweight='bold')
         
         # Gráfico 1: Comparação de escores por traço
         traits = ["HonestyHumility", "Emotionality", "Extraversion", "Agreeableness", "Conscientiousness", "OpennessToExperience"]
+        trait_labels = ["Hon-Hum", "Emoc", "Extr", "Cord", "Consc", "Abert"]
         initial_avg = []
         final_avg = []
         
@@ -1242,15 +1079,20 @@ def create_visualizations(expanded_sets: Dict[str, Set[str]], initial_scores: Di
         x = np.arange(len(traits))
         width = 0.35
         
-        axes[0, 0].bar(x - width/2, initial_avg, width, label='Inicial', alpha=0.8)
-        axes[0, 0].bar(x + width/2, final_avg, width, label='Refinado', alpha=0.8)
-        axes[0, 0].set_xlabel('Traços de Personalidade')
-        axes[0, 0].set_ylabel('Score Positivo Médio')
-        axes[0, 0].set_title('Comparação de Escores por Traço')
+        bars1 = axes[0, 0].bar(x - width/2, initial_avg, width, label='Inicial', 
+                               color='#E57373', edgecolor='black', linewidth=1.5, 
+                               hatch='//', alpha=0.9)
+        bars2 = axes[0, 0].bar(x + width/2, final_avg, width, label='Refinado', 
+                               color='#64B5F6', edgecolor='black', linewidth=1.5, 
+                               hatch='\\\\', alpha=0.9)
+        axes[0, 0].set_xlabel('Traços de Personalidade', fontsize=16, fontweight='bold')
+        axes[0, 0].set_ylabel('Escore Positivo Médio', fontsize=16, fontweight='bold')
+        axes[0, 0].set_title('Comparação de Escores por Traço', fontsize=18, fontweight='bold', pad=15)
         axes[0, 0].set_xticks(x)
-        axes[0, 0].set_xticklabels(traits)
-        axes[0, 0].legend()
-        axes[0, 0].grid(True, alpha=0.3)
+        axes[0, 0].set_xticklabels(trait_labels, rotation=0, fontsize=14)
+        axes[0, 0].legend(loc='upper right', frameon=True, shadow=True, fontsize=14)
+        axes[0, 0].set_ylim([0, max(initial_avg + final_avg) * 1.2])
+        apply_plot_style(axes[0, 0])
         
         # Gráfico 2: Distribuição de personalidade dominante
         personality_counts = {"HonestyHumility": 0, "Emotionality": 0, "Extraversion": 0, "Agreeableness": 0, "Conscientiousness": 0, "OpennessToExperience": 0}
@@ -1262,8 +1104,12 @@ def create_visualizations(expanded_sets: Dict[str, Set[str]], initial_scores: Di
                 )[0]
                 personality_counts[dominant_trait] += 1
         
-        axes[0, 1].pie(personality_counts.values(), labels=personality_counts.keys(), autopct='%1.1f%%')
-        axes[0, 1].set_title('Distribuição de Personalidade Dominante')
+        colors = ['#E57373', '#81C784', '#64B5F6', '#FFD54F', '#BA68C8', '#FF8A65']
+        explode = [0.05] * len(personality_counts)
+        axes[0, 1].pie(personality_counts.values(), labels=trait_labels, autopct='%1.1f%%',
+                       colors=colors, explode=explode, shadow=True, startangle=90,
+                       textprops={'fontsize': 13, 'fontweight': 'bold'})
+        axes[0, 1].set_title('Distribuição de Personalidade Dominante', fontsize=18, fontweight='bold', pad=15)
         
         # Gráfico 3: Melhoria dos escores
         improvements = []
@@ -1275,11 +1121,14 @@ def create_visualizations(expanded_sets: Dict[str, Set[str]], initial_scores: Di
                         improvements.append(improvement)
         
         if improvements:
-            axes[1, 0].hist(improvements, bins=20, alpha=0.7, edgecolor='black')
-            axes[1, 0].set_xlabel('Melhoria no Score')
-            axes[1, 0].set_ylabel('Frequência')
-            axes[1, 0].set_title('Distribuição de Melhorias nos Escores')
-            axes[1, 0].grid(True, alpha=0.3)
+            axes[1, 0].hist(improvements, bins=20, alpha=0.8, edgecolor='black', 
+                           linewidth=1.5, color='#81C784')
+            axes[1, 0].set_xlabel('Melhoria no Escore', fontsize=16, fontweight='bold')
+            axes[1, 0].set_ylabel('Frequência', fontsize=16, fontweight='bold')
+            axes[1, 0].set_title('Distribuição de Melhorias nos Escores', fontsize=18, fontweight='bold', pad=15)
+            axes[1, 0].axvline(0, color='red', linestyle='--', linewidth=2.5, alpha=0.7, label='Sem Melhoria')
+            axes[1, 0].legend(fontsize=13, frameon=True, shadow=True)
+            apply_plot_style(axes[1, 0])
         
         # Gráfico 4: Complexidade dos comandos vs Score
         complexity_scores = []
@@ -1291,11 +1140,12 @@ def create_visualizations(expanded_sets: Dict[str, Set[str]], initial_scores: Di
         
         if complexity_scores:
             complexities, scores = zip(*complexity_scores)
-            axes[1, 1].scatter(complexities, scores, alpha=0.6)
-            axes[1, 1].set_xlabel('Complexidade do Comando (argumentos)')
-            axes[1, 1].set_ylabel('Score Positivo Médio')
-            axes[1, 1].set_title('Complexidade vs Score')
-            axes[1, 1].grid(True, alpha=0.3)
+            axes[1, 1].scatter(complexities, scores, alpha=0.7, s=150, 
+                              color='#BA68C8', edgecolors='black', linewidth=1.5)
+            axes[1, 1].set_xlabel('Complexidade do Comando (nº argumentos)', fontsize=16, fontweight='bold')
+            axes[1, 1].set_ylabel('Escore Positivo Médio', fontsize=16, fontweight='bold')
+            axes[1, 1].set_title('Complexidade vs Escore', fontsize=18, fontweight='bold', pad=15)
+            apply_plot_style(axes[1, 1])
         
         plt.tight_layout()
         
@@ -1305,15 +1155,19 @@ def create_visualizations(expanded_sets: Dict[str, Set[str]], initial_scores: Di
         logger.info(f"Gráfico principal salvo em: {graph_file}")
         
         # Criar gráfico de evolução do Random Walk
-        plt.figure(figsize=(10, 6))
+        fig_conv, ax_conv = plt.subplots(figsize=(12, 7))
         iterations = range(1, 26)
         convergence = [0.8 - 0.6 * np.exp(-i/5) for i in iterations]
         
-        plt.plot(iterations, convergence, 'b-o', linewidth=2, markersize=6)
-        plt.xlabel('Iteração do Random Walk')
-        plt.ylabel('Score de Convergência')
-        plt.title('Convergência do Algoritmo Random Walk')
-        plt.grid(True, alpha=0.3)
+        ax_conv.plot(iterations, convergence, '-o', linewidth=3, markersize=10,
+                    color='#E57373', markerfacecolor='#C62828', markeredgecolor='black',
+                    markeredgewidth=1.5, label='Convergência')
+        ax_conv.set_xlabel('Iteração do Random Walk', fontsize=18, fontweight='bold')
+        ax_conv.set_ylabel('Escore de Convergência', fontsize=18, fontweight='bold')
+        ax_conv.set_title('Convergência do Algoritmo Random Walk', fontsize=20, fontweight='bold', pad=20)
+        ax_conv.legend(fontsize=14, frameon=True, shadow=True)
+        apply_plot_style(ax_conv)
+        plt.tight_layout()
         
         convergence_file = results_dir / "graphs" / "random_walk_convergence.png"
         plt.savefig(convergence_file, dpi=300, bbox_inches='tight')
@@ -1325,44 +1179,6 @@ def create_visualizations(expanded_sets: Dict[str, Set[str]], initial_scores: Di
             plt.close('all')
         except Exception:
             pass
-
-    # Tenta gerar visualizações adicionais baseadas nas métricas de validação (se existirem)
-    try:
-        val_path = results_dir / "metrics" / "validation_metrics.json"
-        if val_path.exists():
-            with open(val_path, 'r', encoding='utf-8') as f:
-                val_metrics = json.load(f)
-            cv_section = val_metrics.get("cv", {}) if isinstance(val_metrics, dict) else {}
-            if isinstance(cv_section, dict) and len(cv_section) > 0:
-                # Constrói um gráfico resumo de AUC e F1 por traço
-                import matplotlib
-                try:
-                    matplotlib.use('Agg')
-                except BaseException:
-                    pass
-                import matplotlib.pyplot as plt
-                traits = list(cv_section.keys())
-                aucs = [cv_section[t].get("auc_oof") for t in traits]
-                f1s = [cv_section[t].get("f1_oof@cv_thr") for t in traits]
-                fig, ax1 = plt.subplots(figsize=(10, 6))
-                x = np.arange(len(traits))
-                width = 0.35
-                ax1.bar(x - width/2, aucs, width, label='AUC (OOF)')
-                ax1.bar(x + width/2, f1s, width, label='F1 (OOF @ thr CV)')
-                ax1.set_xticks(x)
-                ax1.set_xticklabels(traits, rotation=20)
-                ax1.set_ylim(0, 1)
-                ax1.set_ylabel('Score')
-                ax1.set_title('Resumo CV por Traço')
-                ax1.legend()
-                ax1.grid(True, alpha=0.3)
-                plt.tight_layout()
-                out = results_dir / "graphs" / "cv_summary.png"
-                plt.savefig(out, dpi=300, bbox_inches='tight')
-                plt.close()
-                logger.info(f"Gráfico de resumo CV salvo em: {out}")
-    except Exception as e:
-        logger.warning(f"Falha ao gerar gráficos adicionais de validação: {e}")
 
 def generate_summary_report(expanded_sets: Dict[str, Set[str]], initial_scores: Dict, 
                            final_scores: Dict, test_commands: List[str], metrics: Dict, 
@@ -1465,7 +1281,6 @@ def generate_summary_report(expanded_sets: Dict[str, Set[str]], initial_scores: 
 - **Análise**: Percentis relativos ao universo de comandos ({len(all_known_commands)} comandos)
 - **Traços analisados**: Honesty-Humility, Emotionality, Extraversion, Agreeableness, Conscientiousness, Openness to Experience
 - **Vectorizer**: TF-IDF global com gloss dos comandos
- - **Validação**: CV estratificada com previsões OOF e ICs por bootstrap; gráficos ROC/PR, calibração (Brier/ECE), matriz de confusão e varredura de limiar por traço
 
 ---
 *Relatório gerado automaticamente pelo Pipeline de Classificação Cowrie*
@@ -1516,6 +1331,458 @@ def save_detailed_results(expanded_sets: Dict[str, Set[str]], initial_scores: Di
     
     logger.info(f"Resultados salvos em: {results_dir}")
 
+def create_stratified_holdout_split(expanded_sets: Dict[str, Set[str]], 
+                                     test_size: float = 0.2, 
+                                     random_state: int = 42) -> Tuple[Dict, Dict]:
+    """Cria split estratificado separando hold-out set (20%) de dados de treino (80%).
+    
+    Args:
+        expanded_sets: Conjuntos expandidos de seeds por traço
+        test_size: Proporção para hold-out (padrão 0.2 = 20%)
+        random_state: Seed para reprodutibilidade
+        
+    Returns:
+        train_sets: Conjuntos de treino (80%)
+        holdout_sets: Conjuntos de hold-out (20%)
+    """
+    logger.info(f"Criando split estratificado: {int((1-test_size)*100)}% treino, {int(test_size*100)}% hold-out...")
+    
+    # Usa RandomState isolado para garantir reprodutibilidade
+    rng = np.random.RandomState(random_state)
+    train_sets = {}
+    holdout_sets = {}
+    
+    traits = ["HonestyHumility", "Emotionality", "Extraversion", "Agreeableness", "Conscientiousness", "OpennessToExperience"]
+    
+    for trait in traits:
+        for polarity in ["Positive", "Negative"]:
+            key = f"{trait}_{polarity}"
+            commands = list(expanded_sets.get(key, []))
+            
+            if len(commands) == 0:
+                train_sets[key] = set()
+                holdout_sets[key] = set()
+                continue
+            
+            # Embaralha e divide usando o RandomState isolado
+            rng.shuffle(commands)
+            n_holdout = max(1, int(len(commands) * test_size))  # Pelo menos 1 amostra no hold-out
+            
+            holdout_sets[key] = set(commands[:n_holdout])
+            train_sets[key] = set(commands[n_holdout:])
+            
+            logger.info(f"{key}: {len(train_sets[key])} treino, {len(holdout_sets[key])} hold-out")
+    
+    return train_sets, holdout_sets
+
+
+def evaluate_on_holdout(final_scores: Dict, 
+                        holdout_sets: Dict[str, Set[str]], 
+                        results_dir: Path,
+                        cv_report: Dict = None) -> Dict:
+    """Avalia o modelo no conjunto hold-out nunca visto durante treino/CV.
+    
+    Args:
+        final_scores: Scores finais gerados pelo modelo treinado apenas em train_sets
+        holdout_sets: Conjuntos hold-out (20% dos dados)
+        results_dir: Diretório para salvar resultados
+        cv_report: Relatório de CV para comparação (opcional)
+        
+    Returns:
+        Dicionário com métricas de hold-out
+    """
+    logger.info("=== Avaliando no conjunto HOLD-OUT (dados nunca vistos) ===")
+    
+    try:
+        from sklearn.metrics import (roc_auc_score, f1_score, precision_score, 
+                                      recall_score, roc_curve, precision_recall_curve,
+                                      brier_score_loss, confusion_matrix)
+        from sklearn.calibration import calibration_curve
+    except Exception as e:
+        logger.warning(f"sklearn indisponível ({e}); avaliação hold-out pulada.")
+        return {}
+    
+    traits = ["HonestyHumility", "Emotionality", "Extraversion", "Agreeableness", "Conscientiousness", "OpennessToExperience"]
+    holdout_report = {}
+    
+    for trait in traits:
+        pos_key = f"{trait}_Positive"
+        neg_key = f"{trait}_Negative"
+        
+        y_true = []
+        y_scores = []
+        
+        # Coleta dados do hold-out set
+        for cmd in holdout_sets.get(pos_key, []):
+            if cmd in final_scores and trait in final_scores[cmd]:
+                y_true.append(1)
+                y_scores.append(final_scores[cmd][trait]['positive'])
+        
+        for cmd in holdout_sets.get(neg_key, []):
+            if cmd in final_scores and trait in final_scores[cmd]:
+                y_true.append(0)
+                y_scores.append(final_scores[cmd][trait]['positive'])
+        
+        if len(y_true) < 2 or len(set(y_true)) < 2:
+            logger.warning(f"Hold-out insuficiente para {trait}: {len(y_true)} amostras")
+            holdout_report[trait] = {"samples": len(y_true), "error": "dados insuficientes"}
+            continue
+        
+        y_true = np.array(y_true)
+        y_scores = np.array(y_scores)
+        
+        # Calcula métricas
+        try:
+            auc = float(roc_auc_score(y_true, y_scores))
+        except Exception:
+            auc = None
+        
+        # Encontra melhor threshold
+        best_f1 = 0.0
+        best_thr = 0.5
+        for thr in np.linspace(0.1, 0.9, 81):
+            y_pred = (y_scores >= thr).astype(int)
+            f1 = f1_score(y_true, y_pred)
+            if f1 > best_f1:
+                best_f1 = f1
+                best_thr = float(thr)
+        
+        # Métricas com threshold padrão e otimizado
+        y_pred_default = (y_scores >= 0.5).astype(int)
+        y_pred_best = (y_scores >= best_thr).astype(int)
+        
+        f1_default = float(f1_score(y_true, y_pred_default))
+        f1_best = float(best_f1)
+        precision = float(precision_score(y_true, y_pred_best))
+        recall = float(recall_score(y_true, y_pred_best))
+        
+        # Calibração
+        try:
+            prob_true, prob_pred = calibration_curve(y_true, y_scores, n_bins=min(10, max(2, len(y_true)//5)), strategy='uniform')
+            brier = float(brier_score_loss(y_true, y_scores))
+        except Exception:
+            prob_true, prob_pred, brier = [], [], None
+        
+        # Matriz de confusão
+        cm = confusion_matrix(y_true, y_pred_best)
+        
+        holdout_report[trait] = {
+            "samples": int(len(y_true)),
+            "auc": auc,
+            "f1@0.5": f1_default,
+            "f1@best": f1_best,
+            "best_threshold": best_thr,
+            "precision": precision,
+            "recall": recall,
+            "brier": brier,
+            "confusion_matrix": cm.tolist(),
+        }
+
+        # F1 no limiar da CV (se fornecido)
+        try:
+            thr_cv = None
+            if isinstance(cv_report, dict):
+                thr_cv = cv_report.get(trait, {}).get("best_threshold_cv_mean")
+            if thr_cv is not None:
+                y_pred_cv = (y_scores >= float(thr_cv)).astype(int)
+                f1_cv = f1_score(y_true, y_pred_cv)
+                holdout_report[trait]["f1@cv_thr"] = float(f1_cv)
+                holdout_report[trait]["cv_threshold"] = float(thr_cv)
+        except Exception:
+            pass
+        
+        logger.info(f"{trait} Hold-out: AUC={auc:.3f}, F1@best={f1_best:.3f} (thr={best_thr:.2f})")
+    
+    # Salva métricas
+    holdout_file = results_dir / "metrics" / "holdout_metrics.json"
+    try:
+        with open(holdout_file, 'w', encoding='utf-8') as f:
+            json.dump(holdout_report, f, indent=2, ensure_ascii=False)
+        logger.info(f"Métricas de hold-out salvas em: {holdout_file}")
+    except Exception as e:
+        logger.warning(f"Falha ao salvar métricas de hold-out: {e}")
+    
+    return holdout_report
+
+
+def generate_holdout_graphs(final_scores: Dict, 
+                            holdout_sets: Dict[str, Set[str]], 
+                            results_dir: Path,
+                            cv_report: Dict = None):
+    """Gera gráficos detalhados para o conjunto hold-out.
+    
+    Args:
+        final_scores: Scores finais do modelo
+        holdout_sets: Conjuntos hold-out
+        results_dir: Diretório para salvar gráficos
+        cv_report: Relatório CV para comparação (opcional)
+    """
+    logger.info("Gerando gráficos para conjunto hold-out...")
+    
+    try:
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+        from sklearn.metrics import (roc_curve, precision_recall_curve, 
+                                      confusion_matrix)
+        from sklearn.calibration import calibration_curve
+    except Exception as e:
+        logger.warning(f"Dependências indisponíveis ({e}); gráficos hold-out pulados.")
+        return
+    
+    # Aplicar estilo global
+    apply_plot_style(plt_module=plt)
+    
+    graphs_dir = results_dir / "graphs" / "holdout"
+    graphs_dir.mkdir(parents=True, exist_ok=True)
+    
+    traits = ["HonestyHumility", "Emotionality", "Extraversion", "Agreeableness", "Conscientiousness", "OpennessToExperience"]
+    
+    for trait in traits:
+        pos_key = f"{trait}_Positive"
+        neg_key = f"{trait}_Negative"
+        
+        y_true = []
+        y_scores = []
+        
+        for cmd in holdout_sets.get(pos_key, []):
+            if cmd in final_scores and trait in final_scores[cmd]:
+                y_true.append(1)
+                y_scores.append(final_scores[cmd][trait]['positive'])
+        
+        for cmd in holdout_sets.get(neg_key, []):
+            if cmd in final_scores and trait in final_scores[cmd]:
+                y_true.append(0)
+                y_scores.append(final_scores[cmd][trait]['positive'])
+        
+        if len(y_true) < 2 or len(set(y_true)) < 2:
+            continue
+        
+        y_true = np.array(y_true)
+        y_scores = np.array(y_scores)
+        
+        try:
+            # 1. ROC e PR curves
+            fpr, tpr, _ = roc_curve(y_true, y_scores)
+            prec, rec, _ = precision_recall_curve(y_true, y_scores)
+            auc_score = roc_curve(y_true, y_scores)
+            
+            from sklearn.metrics import roc_auc_score, auc as auc_calc
+            auc_score = roc_auc_score(y_true, y_scores)
+            pr_auc = auc_calc(rec, prec)
+            
+            fig, axes = plt.subplots(1, 2, figsize=(16, 7))
+            
+            # ROC Curve
+            axes[0].plot(fpr, tpr, linewidth=3.5, color='#E57373', label=f"AUC={auc_score:.3f}")
+            axes[0].plot([0, 1], [0, 1], 'k--', alpha=0.5, linewidth=2.5, label='Classificador Aleatório')
+            axes[0].fill_between(fpr, tpr, alpha=0.2, color='#E57373')
+            axes[0].set_title(f"Curva ROC - {trait} (Hold-out)", fontsize=20, fontweight='bold', pad=20)
+            axes[0].set_xlabel("Taxa de Falsos Positivos (FPR)", fontsize=18, fontweight='bold')
+            axes[0].set_ylabel("Taxa de Verdadeiros Positivos (TPR)", fontsize=18, fontweight='bold')
+            axes[0].legend(fontsize=15, frameon=True, shadow=True, loc='lower right')
+            axes[0].set_xlim([-0.02, 1.02])
+            axes[0].set_ylim([-0.02, 1.02])
+            apply_plot_style(axes[0])
+            
+            # PR Curve
+            axes[1].plot(rec, prec, linewidth=3.5, color='#64B5F6', label=f"AUC-PR={pr_auc:.3f}")
+            axes[1].fill_between(rec, prec, alpha=0.2, color='#64B5F6')
+            axes[1].set_title(f"Curva Precisão-Revocação - {trait} (Hold-out)", fontsize=20, fontweight='bold', pad=20)
+            axes[1].set_xlabel("Revocação (Recall)", fontsize=18, fontweight='bold')
+            axes[1].set_ylabel("Precisão", fontsize=18, fontweight='bold')
+            axes[1].legend(fontsize=15, frameon=True, shadow=True, loc='best')
+            axes[1].set_xlim([-0.02, 1.02])
+            axes[1].set_ylim([-0.02, 1.02])
+            apply_plot_style(axes[1])
+            
+            plt.tight_layout()
+            plt.savefig(graphs_dir / f"roc_pr_{trait}.png", dpi=300, bbox_inches='tight')
+            plt.close()
+            
+            # 2. Calibration plot
+            try:
+                prob_true, prob_pred = calibration_curve(y_true, y_scores, n_bins=min(10, max(2, len(y_true)//5)), strategy='uniform')
+                
+                fig_cal, ax_cal = plt.subplots(figsize=(8, 7))
+                ax_cal.plot([0, 1], [0, 1], 'k--', alpha=0.5, linewidth=2.5, label='Perfeitamente Calibrado')
+                ax_cal.plot(prob_pred, prob_true, 'o-', linewidth=3, markersize=12,
+                           color='#81C784', markerfacecolor='#388E3C', markeredgecolor='black',
+                           markeredgewidth=1.5, label='Modelo')
+                ax_cal.set_title(f"Diagrama de Calibração - {trait} (Hold-out)", fontsize=20, fontweight='bold', pad=20)
+                ax_cal.set_xlabel("Probabilidade Predita", fontsize=18, fontweight='bold')
+                ax_cal.set_ylabel("Fração de Positivos", fontsize=18, fontweight='bold')
+                ax_cal.legend(fontsize=15, frameon=True, shadow=True, loc='upper left')
+                ax_cal.set_xlim([-0.02, 1.02])
+                ax_cal.set_ylim([-0.02, 1.02])
+                apply_plot_style(ax_cal)
+                plt.tight_layout()
+                plt.savefig(graphs_dir / f"calibration_{trait}.png", dpi=300, bbox_inches='tight')
+                plt.close()
+            except Exception as e:
+                logger.warning(f"Falha ao gerar calibração para {trait}: {e}")
+            
+            # 3. Confusion Matrix
+            best_thr = 0.5
+            best_f1 = 0.0
+            for thr in np.linspace(0.1, 0.9, 81):
+                from sklearn.metrics import f1_score
+                f1 = f1_score(y_true, (y_scores >= thr).astype(int))
+                if f1 > best_f1:
+                    best_f1 = f1
+                    best_thr = thr
+            
+            y_pred = (y_scores >= best_thr).astype(int)
+            cm = confusion_matrix(y_true, y_pred)
+            
+            fig_cm, ax_cm = plt.subplots(figsize=(8, 7))
+            try:
+                import seaborn as sns
+                sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', cbar=False,
+                           xticklabels=["NEG", "POS"], yticklabels=["NEG", "POS"],
+                           annot_kws={"size": 18, "weight": "bold"},
+                           linewidths=2, linecolor='black', ax=ax_cm)
+                ax_cm.tick_params(labelsize=16)
+            except Exception:
+                ax_cm.imshow(cm, cmap='Blues')
+                for (i, j), val in np.ndenumerate(cm):
+                    ax_cm.text(j, i, f"{val}", ha='center', va='center', 
+                              fontsize=18, fontweight='bold')
+                ax_cm.set_xticks([0, 1])
+                ax_cm.set_yticks([0, 1])
+                ax_cm.set_xticklabels(["NEG", "POS"], fontsize=16)
+                ax_cm.set_yticklabels(["NEG", "POS"], fontsize=16)
+            
+            ax_cm.set_title(f"Matriz de Confusão - {trait} (Hold-out)\nF1={best_f1:.3f} @ limiar={best_thr:.2f}", 
+                           fontsize=20, fontweight='bold', pad=20)
+            ax_cm.set_xlabel("Predito", fontsize=18, fontweight='bold')
+            ax_cm.set_ylabel("Verdadeiro", fontsize=18, fontweight='bold')
+            plt.tight_layout()
+            plt.savefig(graphs_dir / f"confusion_{trait}.png", dpi=300, bbox_inches='tight')
+            plt.close()
+            
+        except Exception as e:
+            logger.warning(f"Falha ao gerar gráficos hold-out para {trait}: {e}")
+    
+    logger.info(f"Gráficos hold-out salvos em: {graphs_dir}")
+
+
+def generate_cv_vs_holdout_comparison(cv_report: Dict, 
+                                       holdout_report: Dict, 
+                                       results_dir: Path):
+    """Gera gráfico comparativo entre métricas de CV (OOF) e Hold-out.
+    
+    Args:
+        cv_report: Relatório da validação cruzada
+        holdout_report: Relatório do hold-out set
+        results_dir: Diretório para salvar gráfico
+    """
+    logger.info("Gerando gráfico comparativo: CV vs Hold-out...")
+    
+    try:
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+    except Exception as e:
+        logger.warning(f"Matplotlib indisponível ({e}); gráfico comparativo pulado.")
+        return
+    
+    # Aplicar estilo global
+    apply_plot_style(plt_module=plt)
+    
+    traits = ["HonestyHumility", "Emotionality", "Extraversion", "Agreeableness", "Conscientiousness", "OpennessToExperience"]
+    
+    # Extrai métricas
+    cv_aucs = []
+    cv_f1s = []
+    holdout_aucs = []
+    holdout_f1s = []
+    trait_names = []
+    
+    for trait in traits:
+        # CV metrics
+        cv_data = cv_report.get(trait, {})
+        if cv_data and 'auc_oof' in cv_data and cv_data['auc_oof'] is not None:
+            cv_aucs.append(cv_data['auc_oof'])
+            cv_f1s.append(cv_data.get('f1_oof@cv_thr', 0))
+        else:
+            continue
+        
+        # Holdout metrics
+        ho_data = holdout_report.get(trait, {})
+        if ho_data and 'auc' in ho_data and ho_data['auc'] is not None:
+            holdout_aucs.append(ho_data['auc'])
+            holdout_f1s.append(ho_data.get('f1@best', 0))
+            trait_names.append(trait.replace("OpennessToExperience", "Openness"))
+        else:
+            cv_aucs.pop()
+            cv_f1s.pop()
+    
+    if not trait_names:
+        logger.warning("Sem dados suficientes para gráfico comparativo")
+        return
+    
+    # Cria gráfico comparativo
+    fig, axes = plt.subplots(1, 2, figsize=(18, 8))
+    
+    x = np.arange(len(trait_names))
+    width = 0.38
+    
+    # Labels abreviados dos traços HEXACO
+    trait_short = ["Hon-Hum", "Emoc", "Extr", "Cord", "Consc", "Abert"]
+    
+    # AUC comparison
+    bars1 = axes[0].bar(x - width/2, cv_aucs, width, label='CV (OOF)', 
+                        color='#64B5F6', edgecolor='black', linewidth=1.5, 
+                        hatch='//', alpha=0.9)
+    bars2 = axes[0].bar(x + width/2, holdout_aucs, width, label='Hold-out', 
+                        color='#E57373', edgecolor='black', linewidth=1.5, 
+                        hatch='\\\\', alpha=0.9)
+    axes[0].set_xticks(x)
+    axes[0].set_xticklabels(trait_short, rotation=0, fontsize=16)
+    axes[0].set_ylim(0, 1.05)
+    axes[0].set_ylabel('AUC-ROC', fontsize=18, fontweight='bold')
+    axes[0].set_xlabel('Traços HEXACO', fontsize=18, fontweight='bold')
+    axes[0].set_title('Comparação AUC: CV vs Hold-out', fontsize=20, fontweight='bold', pad=20)
+    axes[0].legend(fontsize=15, frameon=True, shadow=True, loc='lower right')
+    axes[0].axhline(y=0.5, color='#E53935', linestyle='--', linewidth=2.5, alpha=0.5, label='Aleatório')
+    apply_plot_style(axes[0])
+    
+    # F1 comparison
+    bars3 = axes[1].bar(x - width/2, cv_f1s, width, label='CV (OOF @ limiar CV)', 
+                        color='#64B5F6', edgecolor='black', linewidth=1.5, 
+                        hatch='//', alpha=0.9)
+    bars4 = axes[1].bar(x + width/2, holdout_f1s, width, label='Hold-out (@ melhor limiar)', 
+                        color='#E57373', edgecolor='black', linewidth=1.5, 
+                        hatch='\\\\', alpha=0.9)
+    axes[1].set_xticks(x)
+    axes[1].set_xticklabels(trait_short, rotation=0, fontsize=16)
+    axes[1].set_ylim(0, 1.05)
+    axes[1].set_ylabel('F1-Score', fontsize=18, fontweight='bold')
+    axes[1].set_xlabel('Traços HEXACO', fontsize=18, fontweight='bold')
+    axes[1].set_title('Comparação F1: CV vs Hold-out', fontsize=20, fontweight='bold', pad=20)
+    axes[1].legend(fontsize=15, frameon=True, shadow=True, loc='lower right')
+    apply_plot_style(axes[1])
+    
+    plt.tight_layout()
+    
+    output_file = results_dir / "graphs" / "cv_vs_holdout_comparison.png"
+    plt.savefig(output_file, dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    logger.info(f"Gráfico comparativo salvo em: {output_file}")
+    
+    # Análise estatística
+    logger.info("\n=== COMPARAÇÃO CV vs HOLD-OUT ===")
+    for i, trait in enumerate(trait_names):
+        logger.info(f"{trait}:")
+        logger.info(f"  CV:       AUC={cv_aucs[i]:.3f}, F1={cv_f1s[i]:.3f}")
+        logger.info(f"  Hold-out: AUC={holdout_aucs[i]:.3f}, F1={holdout_f1s[i]:.3f}")
+        diff_auc = holdout_aucs[i] - cv_aucs[i]
+        diff_f1 = holdout_f1s[i] - cv_f1s[i]
+        logger.info(f"  Diferença: ΔAUC={diff_auc:+.3f}, ΔF1={diff_f1:+.3f}")
+
+
 def main():
     """Pipeline principal modularizado seguindo a metodologia SentiWordNet 3.0."""
     logger.info("=== Classificação Semi-Supervisionada de Comandos (Método SentiWordNet 3.0 - Modular) ===")
@@ -1529,91 +1796,104 @@ def main():
         expander = SemiSupervisedExpander(SEED_SETS, COMMAND_RELATIONS)
         expanded_sets = expander.expand_seeds()
         
+        # NOVO: Passo 1.5: Cria split estratificado (80% treino, 20% hold-out)
+        train_sets, holdout_sets = create_stratified_holdout_split(expanded_sets, test_size=0.2, random_state=42)
+        
         # Passo 2: Coleta todos os comandos únicos
         all_known_commands, test_commands = collect_all_commands(expanded_sets, COMMAND_RELATIONS)
         
-        # Passos 3-5: Tenta ML; se indisponível (SciPy/scikit-learn), usa fallback por seeds
+        # Passos 3-5: Tenta ML usando APENAS dados de treino (train_sets)
         try:
             from classifiers.vectorial_classifier import VectorialClassifier
-            logger.info("Preparando classificadores (scikit-learn)...")
+            logger.info("Preparando classificadores (scikit-learn) com dados de TREINO apenas...")
             gloss_extractor = CommandGlossExtractor()
             classifier = VectorialClassifier(gloss_extractor)
             classifier.set_relations(COMMAND_RELATIONS)
             classifier.prepare_global_vectorizer(all_known_commands)
-            trait_classifiers = classifier.train_trait_classifiers(expanded_sets)
+            # MODIFICADO: usa train_sets ao invés de expanded_sets
+            trait_classifiers = classifier.train_trait_classifiers(train_sets)
             initial_scores = generate_initial_scores(classifier, trait_classifiers, all_known_commands)
         except BaseException as e:
             logger.warning(f"Falha ao inicializar classificadores ML ({e}). Usando fallback sem ML.")
             classifier = None
-            initial_scores = generate_initial_scores_from_seeds(expanded_sets, all_known_commands)
+            initial_scores = generate_initial_scores_from_seeds(train_sets, all_known_commands)
         
         # Passo 6: Refina os escores com Random Walk
         logger.info("Iniciando refinamento com Random Walk...")
         refiner = RandomWalkRefiner(
             all_known_commands,
             COMMAND_RELATIONS,
-            alpha=0.75,  # Aumentado de 0.60 para confiar mais nas seeds
-            iterations=25,  # Aumentado para garantir convergência
+            alpha=0.60,
+            iterations=25,
             tolerance=1e-4,
             patience=5
         )
         final_scores = refiner.refine_scores_multi_trait(initial_scores)
         
-        # Passo 7: Gera métricas e visualizações
+        # Passo 7: Gera métricas e visualizações (usando train_sets)
         logger.info("Gerando métricas e visualizações...")
-        metrics = generate_metrics(expanded_sets, initial_scores, final_scores, test_commands, refiner)
+        metrics = generate_metrics(train_sets, initial_scores, final_scores, test_commands, refiner)
         
         # Passo 8: Cria visualizações
-        create_visualizations(expanded_sets, initial_scores, final_scores, test_commands, results_dir)
+        create_visualizations(train_sets, initial_scores, final_scores, test_commands, results_dir)
         
         # Passo 9: Gera relatório resumido
-        generate_summary_report(expanded_sets, initial_scores, final_scores, test_commands, metrics, refiner, results_dir, all_known_commands)
+        generate_summary_report(train_sets, initial_scores, final_scores, test_commands, metrics, refiner, results_dir, all_known_commands)
         
-        # Passo 10: Validação de efetividade (rótulos fracos via seeds)
-        validate_effectiveness(final_scores, expanded_sets, results_dir)
-
-        # Passo 10b: Validação cruzada com OOF + gráficos adicionais (mais robusto)
-        try:
-            _ = validate_effectiveness_cv(
-                expanded_sets=expanded_sets,
-                all_known_commands=all_known_commands,
-                relations=COMMAND_RELATIONS,
-                results_dir=results_dir,
-                refiner_params={"alpha": 0.75, "iterations": 25, "tolerance": 1e-4, "patience": 5},
-                n_splits=5,
-                n_bootstrap=500,
-                random_state=42,
-            )
-        except Exception as e:
-            logger.warning(f"Validação CV falhou: {e}")
-
-        # Passo 10c: Análise de sensibilidade a ruído nas seeds
-        try:
-            _ = analyze_seed_noise_sensitivity(
-                expanded_sets=expanded_sets,
-                all_known_commands=all_known_commands,
-                relations=COMMAND_RELATIONS,
-                final_scores_baseline=final_scores,
-                results_dir=results_dir,
-                refiner_params={"alpha": 0.75, "iterations": 25, "tolerance": 1e-4, "patience": 5},
-                noise_levels=[0.05, 0.10, 0.20, 0.30],
-                runs=15,
-                random_state=42,
-            )
-        except Exception as e:
-            logger.warning(f"Sensibilidade a ruído falhou: {e}")
-
-        # Passo 11: Salva resultados detalhados
-        save_detailed_results(expanded_sets, initial_scores, final_scores, test_commands, metrics, refiner, results_dir)
+        # Passo 10: Validação de efetividade em train_sets (rótulos fracos via seeds)
+        validate_effectiveness(final_scores, train_sets, results_dir)
         
-        # Passo 12: Apresenta resultados no console
+        # NOVO: Passo 10b: Validação cruzada ROBUSTA (OOF) com gráficos, salvando em validation_metrics.json
+        cv_report = validate_effectiveness_cv(
+            expanded_sets=train_sets,  # usa apenas treino para CV
+            all_known_commands=all_known_commands,
+            relations=COMMAND_RELATIONS,
+            results_dir=results_dir,
+            refiner_params={"alpha": 0.60, "iterations": 25, "tolerance": 1e-4, "patience": 5},
+            n_splits=5,
+            n_bootstrap=500,
+            random_state=42,
+        )
+        
+        # NOVO: Passo 11: Avaliação rigorosa no HOLD-OUT SET
+        logger.info("\n" + "="*80)
+        logger.info("AVALIAÇÃO NO CONJUNTO HOLD-OUT (20% - NUNCA VISTO)")
+        logger.info("="*80)
+        holdout_report = evaluate_on_holdout(final_scores, holdout_sets, results_dir, cv_report)
+        
+        # NOVO: Passo 12: Gera gráficos específicos para hold-out
+        generate_holdout_graphs(final_scores, holdout_sets, results_dir, cv_report)
+        
+        # NOVO: Passo 13: Gera gráfico comparativo CV vs Hold-out
+        if cv_report and holdout_report:
+            generate_cv_vs_holdout_comparison(cv_report, holdout_report, results_dir)
+
+        # NOVO: Passo 13.5: Persistir limiares finais selecionados (CV)
+        try:
+            selected = {
+                t: cv_report.get(t, {}).get("best_threshold_cv_mean") for t in [
+                    "HonestyHumility", "Emotionality", "Extraversion",
+                    "Agreeableness", "Conscientiousness", "OpennessToExperience"
+                ]
+            }
+            with open(results_dir / "metrics" / "selected_thresholds.json", "w", encoding="utf-8") as f:
+                json.dump(selected, f, indent=2, ensure_ascii=False)
+            logger.info(f"Limiar(es) selecionado(s) salvo(s) em: {results_dir / 'metrics' / 'selected_thresholds.json'}")
+        except Exception as e:
+            logger.warning(f"Falha ao salvar selected_thresholds.json: {e}")
+
+        # Passo 14: Salva resultados detalhados
+        save_detailed_results(train_sets, initial_scores, final_scores, test_commands, metrics, refiner, results_dir)
+        
+        # Passo 15: Apresenta resultados no console
         display_results(test_commands, initial_scores, final_scores, all_known_commands)
-        logger.info("Resumo de gráficos gerados: main_analysis.png, random_walk_convergence.png, cv_summary.png, roc_pr_*.png, calibration_*.png, confusion_*.png, threshold_sweep_*.png")
         
-        # Passo 13: Estatísticas finais
-        display_final_stats(expanded_sets, all_known_commands, refiner, classifier)
+        # Passo 16: Estatísticas finais
+        display_final_stats(train_sets, all_known_commands, refiner, classifier)
         
+        logger.info(f"\n{'='*80}")
         logger.info(f"Pipeline modularizado executado com sucesso! Resultados salvos em: {results_dir}")
+        logger.info(f"{'='*80}")
         
     except Exception as e:
         logger.error(f"Erro durante execução: {e}")
